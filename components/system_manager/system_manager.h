@@ -1,19 +1,21 @@
 #pragma once
+#include "freertos/FreeRTOS.h"
 
-
-enum class system_state 
+enum class SystemState 
 {
     BOOT, // 0
-    NO_WIFI, // 1
-    NO_DATA, // 2
-    NO_API_RESPONSE, // 3
-    DATA, // 4
-    SETUP,
+    NOT_CONNECTED, // 1
+    CONNECTED, // 2
+    SETUP, // 3
     ERROR
 };
 
-class system_manager 
+class SystemManager 
 {
-    public:
-        void init();
+    TaskHandle_t task_system_manager_ = nullptr;
+    QueueHandle_t queue_data_ = nullptr;
+    static constexpr uint32_t k_system_manager_update = 100;
+public:
+    SystemManager();
+    static void systemTask(void* pvParameters);
 };

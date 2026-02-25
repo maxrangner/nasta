@@ -2,11 +2,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "system_manager.h"
+#include "network_manager.h"
 
 extern "C" void app_main(void)
 {
-    system_manager sys_mgr;
-    sys_mgr.init();
+    SystemManager system_manager;
+    NetworkManager network_manager;
+
     while(1) {
         vTaskDelay(portMAX_DELAY);
     }
