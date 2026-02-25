@@ -1,5 +1,7 @@
 #pragma once
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "app_context.h"
 
 enum class NetworkState 
 {
@@ -14,8 +16,10 @@ class NetworkManager
 {
     TaskHandle_t task_network_manager_ = nullptr;
     QueueHandle_t queue_data_ = nullptr;
-    static constexpr uint32_t k_network_manager_update = 100;
+    QueueHandle_t queue_settings_ = nullptr;
+    static constexpr uint32_t kUpdateInterval = 100;
+    uint32_t counter_ = 0;
 public:
-    NetworkManager();
+    NetworkManager(Queues* queues);
     static void networkTask(void* pvParameters);
 };

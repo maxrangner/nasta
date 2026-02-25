@@ -1,5 +1,7 @@
 #pragma once
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "app_context.h"
 
 enum class SystemState 
 {
@@ -14,8 +16,10 @@ class SystemManager
 {
     TaskHandle_t task_system_manager_ = nullptr;
     QueueHandle_t queue_data_ = nullptr;
-    static constexpr uint32_t k_system_manager_update = 100;
+    QueueHandle_t queue_settings_ = nullptr;
+    static constexpr uint32_t kUpdateInterval = 100;
+    uint32_t counter_ = 0;
 public:
-    SystemManager();
+    SystemManager(Queues* queues);
     static void systemTask(void* pvParameters);
 };
