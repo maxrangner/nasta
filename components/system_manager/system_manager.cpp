@@ -1,4 +1,7 @@
 #include "system_manager.h"
+#include "esp_log.h"
+
+static const char *TAG = "system manager";
 
 SystemManager::SystemManager(Queues* queues) {
     xTaskCreatePinnedToCore(     // UI Task
@@ -19,7 +22,7 @@ void SystemManager::systemTask(void* pvParameters) {
     auto* self = static_cast<SystemManager*>(pvParameters);
 
     while(true) {
-        printf("System: %ld\n", self->counter_++);
+        ESP_LOGI(TAG, "%ld\n", self->counter_++);
         if (self->counter_ % 50 == 0) {
             vTaskDelay(pdMS_TO_TICKS(SystemManager::kUpdateInterval));
         }

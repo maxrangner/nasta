@@ -6,7 +6,7 @@ struct DataPacket {
     uint8_t time;
 };
 
-struct SettingsPacket{
+struct SettingsPacket {
     TransportMode setting_transport_mode;
     uint8_t setting_direction_code;
     char setting_ssid[30];

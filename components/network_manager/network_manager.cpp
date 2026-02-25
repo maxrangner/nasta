@@ -1,4 +1,7 @@
 #include "network_manager.h"
+#include "esp_log.h"
+
+static const char *TAG = "network manager";
 
 NetworkManager::NetworkManager(Queues* queues) {
     xTaskCreatePinnedToCore(     // UI Task
@@ -19,7 +22,7 @@ void NetworkManager::networkTask(void* pvParameters) {
     auto* self = static_cast<NetworkManager*>(pvParameters);
 
     while(true) {
-        printf("Network: %ld\n", self->counter_++);
+        ESP_LOGI(TAG, "%ld\n", self->counter_++);
         vTaskDelay(pdMS_TO_TICKS(NetworkManager::kUpdateInterval));
     }
 }

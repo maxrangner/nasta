@@ -3,8 +3,7 @@
 #include "freertos/task.h"
 #include "app_context.h"
 
-enum class SystemState 
-{
+enum class SystemState {
     BOOT, // 0
     NOT_CONNECTED, // 1
     CONNECTED, // 2
@@ -12,8 +11,7 @@ enum class SystemState
     ERROR
 };
 
-class SystemManager 
-{
+class SystemManager {
     TaskHandle_t task_system_manager_ = nullptr;
     QueueHandle_t queue_data_ = nullptr;
     QueueHandle_t queue_settings_ = nullptr;
