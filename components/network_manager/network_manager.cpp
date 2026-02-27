@@ -5,6 +5,10 @@
 static const char *TAG = "network manager";
 
 NetworkManager::NetworkManager(Queues* queues) {
+    queue_data_ = queues->data_queue;
+    queue_settings_ = queues->settings_queue;
+    wifi_event_queue_ = queues->wifi_event_queue;
+
     xTaskCreatePinnedToCore(     // UI Task
       networkTask,               // Function to implement the task
       "networkTask",             // Name of the task
@@ -14,22 +18,102 @@ NetworkManager::NetworkManager(Queues* queues) {
       &task_network_manager_,    // Task handle.
       0                          // Core where the task should run
     );
-    queue_data_ = queues->data_queue;
-    queue_settings_ = queues->settings_queue;
-    wifi_event_queue_ = queues->wifi_event_queue;
-}
 
+    wifi_reconnect_timer_ = xTimerCreate(
+        "Reconnect Timer",
+        pdMS_TO_TICKS(5000),
+        pdFALSE,
+        this,
+        reconnectTimerCallback
+    );
+    if (wifi_reconnect_timer_ == NULL) {
+        ESP_LOGE(TAG, "Failed to create reconnect timer");
+    }
+}
 
 void NetworkManager::networkTask(void* pvParameters) {
     auto* self = static_cast<NetworkManager*>(pvParameters);
-    WifiEvent wifi_event;;
+
+    self->onStateChange(self->network_state);
+    NetworkState network_state_next = NetworkState::INIT;
+    WifiEvent wifi_event;
 
     while(true) {
         xQueueReceive(self->wifi_event_queue_, &wifi_event, portMAX_DELAY);
         ESP_LOGI(TAG, "Wifi event: %d", wifi_event);
+        network_state_next = self->stateMachine(self->network_state, wifi_event);
+
+        if (network_state_next != self->network_state) {
+            self->network_state = network_state_next;
+            self->onStateChange(self->network_state);
+        }
     }
 }
 
-void NetworkManager::init() {
-    wifi_interface_.init(wifi_event_queue_);
+NetworkManager::NetworkState NetworkManager::stateMachine(NetworkState current_state, WifiEvent event) {
+    NetworkState next_state = current_state;
+
+    switch (current_state) {
+        case NetworkState::INIT:
+            if (event == WifiEvent::STARTED) next_state = NetworkState::CONNECTING_STA;
+            break;
+        case NetworkState::CONNECTING_STA:
+            if (event == WifiEvent::CONNECTED) next_state = NetworkState::CONNECTED_STA;
+            if (event == WifiEvent::DISCONNECTED) next_state = NetworkState::DISCONNECTED;
+            break;
+        case NetworkState::CONNECTED_STA:
+            if (event == WifiEvent::DISCONNECTED) next_state = NetworkState::DISCONNECTED;
+            break;
+        case NetworkState::DISCONNECTED:
+            if (event == WifiEvent::CONNECTED) next_state = NetworkState::CONNECTED_STA;
+            if (event == WifiEvent::RETRY_TIMER) next_state = NetworkState::CONNECTING_STA;
+            break;
+        case NetworkState::ERROR:
+            break;
+        default: break;
+    }
+
+    return next_state;
+}
+
+void NetworkManager::onStateChange(NetworkState new_state) {
+    switch (new_state) {
+        case NetworkState::INIT:
+            ESP_LOGI(TAG, "WiFi init");
+            wifi_interface_.init(wifi_event_queue_);
+            break;
+        case NetworkState::CONNECTING_STA:
+            ESP_LOGI(TAG, "Connecteing to WiFi...");
+            xTimerStop(wifi_reconnect_timer_, 0);
+            wifi_interface_.connect();
+            
+            break;
+        case NetworkState::CONNECTED_STA:
+            ESP_LOGI(TAG, "Connected to WiFi!");
+            reconnect_retires_ = 0;
+            break;
+        case NetworkState::DISCONNECTED:
+            ESP_LOGI(TAG, "Disconnected...");
+            xTimerStart(wifi_reconnect_timer_, 0);
+            break;
+        case NetworkState::ERROR:
+            ESP_LOGI(TAG, "Error!");
+            break;
+        default: break;
+    }
+}
+
+void NetworkManager::reconnectTimerCallback(TimerHandle_t xTimer) {
+    auto* self = static_cast<NetworkManager*>(
+        pvTimerGetTimerID(xTimer)
+    );
+    // ESP_LOGI(TAG, "reconnectTimerCallback");
+    self->reconnect_retires_++;
+    if (self->reconnect_retires_ >= 5) {
+        self->onStateChange(NetworkState::ERROR);
+        xTimerStop(self->wifi_reconnect_timer_, 0);
+        return;
+    }
+    WifiEvent event = WifiEvent::RETRY_TIMER;
+    xQueueSend(self->wifi_event_queue_, &event, 0);
 }

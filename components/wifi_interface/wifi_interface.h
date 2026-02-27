@@ -11,6 +11,7 @@ public:
     WifiInterface();
     void init(QueueHandle_t queue);
     wifi_config_t setCredentials();
+    void connect();
     void setMode();
     static void callback(void* arg, 
         esp_event_base_t event_base,

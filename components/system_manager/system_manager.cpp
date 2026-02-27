@@ -4,6 +4,9 @@
 static const char *TAG = "system manager";
 
 SystemManager::SystemManager(Queues* queues) {
+    queue_data_ = queues->data_queue;
+    queue_settings_ = queues->settings_queue;
+    
     xTaskCreatePinnedToCore(     // UI Task
       systemTask,                // Function to implement the task
       "systemTask",              // Name of the task
@@ -13,8 +16,6 @@ SystemManager::SystemManager(Queues* queues) {
       &task_system_manager_,     // Task handle.
       0                          // Core where the task should run
     );
-    queue_data_ = queues->data_queue;
-    queue_settings_ = queues->settings_queue;
 }
 
 

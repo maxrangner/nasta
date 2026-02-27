@@ -17,4 +17,5 @@ enum class WifiEvent{
     STARTED,
     CONNECTED,
     DISCONNECTED,
+    RETRY_TIMER
 };

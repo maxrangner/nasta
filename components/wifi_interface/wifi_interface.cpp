@@ -38,8 +38,10 @@ void WifiInterface::init(QueueHandle_t queue) {
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
+}
 
-    esp_wifi_connect(); // Will move to state machine
+void WifiInterface::connect() {
+    esp_wifi_connect();
 }
 
 wifi_config_t WifiInterface::setCredentials() {
