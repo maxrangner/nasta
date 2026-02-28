@@ -25,6 +25,8 @@ class NetworkManager {
     TimerHandle_t wifi_reconnect_timer_;
     uint8_t reconnect_retires_ = 0;
     static constexpr uint32_t kUpdateInterval_ = 100;
+    static constexpr size_t kMaxApiBufferSize_ = 102400;
+    char* api_buffer;
 
     esp_http_client_config_t http_cfg_;
 public:

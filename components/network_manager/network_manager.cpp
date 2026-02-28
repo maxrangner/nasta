@@ -10,6 +10,12 @@ NetworkManager::NetworkManager(Queues* queues) {
     queue_settings_ = queues->settings_queue;
     wifi_event_queue_ = queues->wifi_event_queue;
 
+    api_buffer = (char*)malloc(kMaxApiBufferSize_);
+    if (api_buffer == nullptr) {
+        ESP_LOGW(TAG, "kMaxApiBufferSize_ malloc failed");
+    }
+    
+
     xTaskCreatePinnedToCore(     // UI Task
       networkTask,               // Function to implement the task
       "networkTask",             // Name of the task
@@ -150,9 +156,8 @@ void NetworkManager::apiFetch(esp_http_client_config_t* cfg) {
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         return;
-    }
+    } else if (content_length > kMaxApiBufferSize_) return;
 
-    char* api_buffer = (char*)malloc(content_length + 1); // Move malloc to NetworkManager constructor
     if (api_buffer == nullptr) {
         ESP_LOGW(TAG, "Error allocating api_buffer to heap");
         return;
@@ -194,3 +199,4 @@ void NetworkManager::apiFetch(esp_http_client_config_t* cfg) {
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
 }
+
