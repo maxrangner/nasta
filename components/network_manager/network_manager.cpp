@@ -1,6 +1,7 @@
 #include "network_manager.h"
 #include "esp_log.h"
 #include "message_types.h"
+#include "cJSON.h"
 
 static const char *TAG = "network manager";
 
@@ -26,9 +27,13 @@ NetworkManager::NetworkManager(Queues* queues) {
         this,
         reconnectTimerCallback
     );
-    if (wifi_reconnect_timer_ == NULL) {
-        ESP_LOGE(TAG, "Failed to create reconnect timer");
-    }
+    http_cfg_ = {
+        .url = "https://transport.integration.sl.se/v1/sites/9143/departures?transport=METRO&forecast=500",
+        // .url = "http://"CONFIG_EXAMPLE_HTTP_ENDPOINT"/get",
+        .method = HTTP_METHOD_GET,
+        .timeout_ms = 5000,
+        .crt_bundle_attach = esp_crt_bundle_attach
+    };
 }
 
 void NetworkManager::networkTask(void* pvParameters) {
@@ -37,15 +42,24 @@ void NetworkManager::networkTask(void* pvParameters) {
     self->onStateChange(self->network_state);
     NetworkState network_state_next = NetworkState::INIT;
     NetworkEvent wifi_event;
+    uint32_t now;
+    uint32_t api_fetch_interval = pdMS_TO_TICKS(10000);
+    uint32_t last_api_fetch = 0;
 
     while(true) {
-        xQueueReceive(self->wifi_event_queue_, &wifi_event, portMAX_DELAY);
-        ESP_LOGI(TAG, "Wifi event: %d", wifi_event);
-        network_state_next = self->stateMachine(self->network_state, wifi_event);
-
-        if (network_state_next != self->network_state) {
-            self->network_state = network_state_next;
-            self->onStateChange(self->network_state);
+        if (xQueueReceive(self->wifi_event_queue_, &wifi_event, pdMS_TO_TICKS(self->kUpdateInterval_)) == pdPASS) {
+            ESP_LOGI(TAG, "networkTask::wifi_event: %d", wifi_event);
+            network_state_next = self->stateMachine(self->network_state, wifi_event);
+            
+            if (network_state_next != self->network_state) {
+                self->network_state = network_state_next;
+                self->onStateChange(self->network_state);
+            }
+        } 
+        now = xTaskGetTickCount();
+        if ((now - last_api_fetch > api_fetch_interval) && self->network_state == NetworkState::CONNECTED_STA) {
+            self->apiFetch(&self->http_cfg_);
+            last_api_fetch = now;
         }
     }
 }
@@ -79,40 +93,104 @@ NetworkManager::NetworkState NetworkManager::stateMachine(NetworkState current_s
             break;
         default: break;
     }
-
+    ESP_LOGI(TAG, "stateMachine::next_state: %d", next_state);
     return next_state;
 }
 
 void NetworkManager::onStateChange(NetworkState new_state) {
     switch (new_state) {
         case NetworkState::INIT:
-            ESP_LOGI(TAG, "WiFi init");
+            ESP_LOGI(TAG, "onStateChange::INIT");
             wifi_interface_.init(wifi_event_queue_);
             break;
         case NetworkState::CONNECTING_STA:
-            ESP_LOGI(TAG, "Connecteing to WiFi...");
-            xTimerStop(wifi_reconnect_timer_, 0);
+            ESP_LOGI(TAG, "onStateChange::CONNECTING_STA");
             wifi_interface_.connect();
             break;
         case NetworkState::CONNECTED_STA:
-            ESP_LOGI(TAG, "Connected to WiFi!");
+            ESP_LOGI(TAG, "onStateChange::CONNECTED_STA");
             reconnect_retires_ = 0;
             break;
         case NetworkState::DISCONNECTED:
-            ESP_LOGI(TAG, "Disconnected...");
+            ESP_LOGI(TAG, "onStateChange::DISCONNECTED");
+            ESP_LOGW(TAG, "WiFi connection lost");
             xTimerStart(wifi_reconnect_timer_, 0);
             break;
         case NetworkState::ERROR:
-            ESP_LOGI(TAG, "Error!");
+            ESP_LOGI(TAG, "onStateChange::ERROR");
             break;
         default: break;
     }
 }
 
 void NetworkManager::reconnectTimerCallback(TimerHandle_t xTimer) {
-    auto* self = static_cast<NetworkManager*>(
-        pvTimerGetTimerID(xTimer)
-    );
+    auto* self = static_cast<NetworkManager*>(pvTimerGetTimerID(xTimer));
     NetworkEvent event = NetworkEvent::RETRY_TIMER;
     xQueueSend(self->wifi_event_queue_, &event, 0);
+}
+
+void NetworkManager::apiFetch(esp_http_client_config_t* cfg) {
+    ESP_LOGI(TAG, "Fetching API");
+
+    esp_http_client_handle_t client = esp_http_client_init(cfg);
+    if (!client) {
+        ESP_LOGW(TAG, "Client init failed");
+        return;
+    }
+    esp_err_t err = esp_http_client_open(client, 0);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "HTTP open failed: %d", err);
+        esp_http_client_cleanup(client);
+        return;
+    }
+
+    uint32_t content_length = esp_http_client_fetch_headers(client);
+    if (content_length <= 0) { // || content_length > kMaxApiBufferSize_)
+        ESP_LOGW(TAG, "Invalid content_length: %d", content_length);
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        return;
+    }
+
+    char* api_buffer = (char*)malloc(content_length + 1); // Move malloc to NetworkManager constructor
+    if (api_buffer == nullptr) {
+        ESP_LOGW(TAG, "Error allocating api_buffer to heap");
+        return;
+    }
+
+    uint32_t total_read = 0;
+    uint32_t start_tick = xTaskGetTickCount();
+    const uint32_t max_wait_ticks = pdMS_TO_TICKS(5000);
+
+    while (total_read < content_length) {
+        uint32_t read = esp_http_client_read(client,
+            api_buffer + total_read,
+            content_length - total_read
+        );
+        if (read < 0) {
+            ESP_LOGW(TAG, "Read error");
+            break;
+        }
+        if (read == 0) {
+            if ((xTaskGetTickCount() - start_tick) > max_wait_ticks) {
+                ESP_LOGW(TAG, "Read timeout");
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+        total_read += read;
+    }
+    if (total_read != content_length) {
+        ESP_LOGW(TAG, "Incomplete body: %lu/%d", total_read, content_length);
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        return;
+    }
+
+    api_buffer[total_read] = '\0';
+
+    // jsonParser(api_buffer);
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
 }

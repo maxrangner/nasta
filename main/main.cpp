@@ -11,7 +11,7 @@ extern "C" void app_main(void)
 {
     systemInit();
     Queues queues = {
-        .data_queue = xQueueCreate(1, sizeof(DataPacket)),
+        .data_queue = xQueueCreate(1, sizeof(DeparturesPacket)),
         .settings_queue = xQueueCreate(1, sizeof(SettingsPacket)),
         .wifi_event_queue = xQueueCreate(10, sizeof(NetworkEvent))
     };

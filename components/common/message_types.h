@@ -2,8 +2,18 @@
 #include "freertos/FreeRTOS.h"
 #include "types.h"
 
-struct DataPacket {
-    uint8_t time;
+struct Departure {
+    TimeDisplayType time_display;
+    TransportMode transport;
+    uint8_t direction;
+    uint8_t line;
+    uint8_t min_to_departure;
+    char clock_next_departure[6];
+};
+
+struct DeparturesPacket {
+    Departure departures[3];
+    uint8_t num_departures;
 };
 
 struct SettingsPacket {

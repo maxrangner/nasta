@@ -1,5 +1,7 @@
 #include "system_manager.h"
 #include "esp_log.h"
+#include "types.h"
+#include "credentials.h"
 
 static const char *TAG = "system manager";
 
@@ -16,8 +18,13 @@ SystemManager::SystemManager(Queues* queues) {
       &task_system_manager_,     // Task handle.
       0                          // Core where the task should run
     );
+    settings_ = {
+        .setting_transport_mode = TransportMode::METRO,
+        .setting_direction_code = 1,
+        .setting_ssid = SSID,
+        .setting_password = PASSWORD
+    };
 }
-
 
 void SystemManager::systemTask(void* pvParameters) {
     auto* self = static_cast<SystemManager*>(pvParameters);

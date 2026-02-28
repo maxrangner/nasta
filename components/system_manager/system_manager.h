@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "app_context.h"
+#include "message_types.h"
 
 enum class SystemState {
     BOOT, // 0
@@ -15,6 +16,7 @@ class SystemManager {
     TaskHandle_t task_system_manager_ = nullptr;
     QueueHandle_t queue_data_ = nullptr;
     QueueHandle_t queue_settings_ = nullptr;
+    SettingsPacket settings_;
     static constexpr uint32_t kUpdateInterval_ = 100;
 public:
     SystemManager(Queues* queues);
