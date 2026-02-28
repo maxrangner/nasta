@@ -195,8 +195,28 @@ void NetworkManager::apiFetch(esp_http_client_config_t* cfg) {
 
     api_buffer[total_read] = '\0';
 
-    // jsonParser(api_buffer);
+    jsonParser(api_buffer);
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
 }
 
+void NetworkManager::jsonParser(char* buffer) {
+    ESP_LOGI(TAG, "Parsing json");
+    Departure new_departure;
+    cJSON* root = cJSON_Parse(buffer);
+    if (root == nullptr) {
+        ESP_LOGW(TAG, "Error parsing root");
+    }
+    cJSON* departures = cJSON_GetObjectItem(root, "departures");
+    if (departures == nullptr) {
+        ESP_LOGW(TAG, "Error parsing departures");
+    }
+    if (cJSON_IsArray(departures)) {
+        uint8_t count = cJSON_GetArraySize(departures);
+        for (uint8_t i = 0; i < count; i++) {
+            cJSON* departure = cJSON_GetArrayItem(departures, i);
+            ESP_LOGI(TAG, "Json:\n%s", cJSON_Print(departure));
+        }
+    }
+    cJSON_Delete(root);
+}
