@@ -12,22 +12,15 @@ NetworkManager::NetworkManager(Queues* queues) : system_in_queue_(queues->system
     }
     
     xTaskCreatePinnedToCore(     // UI Task
-      networkTask,               // Function to implement the task
-      "networkTask",             // Name of the task
-      8192,                      // Stack size in words
-      this,                      // Task input parameter
-      1,                         // Priority of the task
-      &task_network_manager_,    // Task handle.
-      0                          // Core where the task should run
+        networkTask,               // Function to implement the task
+        "networkTask",             // Name of the task
+        8192,                      // Stack size in words
+        this,                      // Task input parameter
+        1,                         // Priority of the task
+        &task_network_manager_,    // Task handle.
+        0                          // Core where the task should run
     );
 
-    wifi_reconnect_timer_ = xTimerCreate(
-        "Reconnect Timer",
-        pdMS_TO_TICKS(5000),
-        pdFALSE,
-        this,
-        reconnectTimerCallback
-    );
     http_cfg_ = {
         .url = "https://transport.integration.sl.se/v1/sites/9143/departures?transport=METRO&forecast=500",
         // .url = "http://"CONFIG_EXAMPLE_HTTP_ENDPOINT"/get",
@@ -35,104 +28,28 @@ NetworkManager::NetworkManager(Queues* queues) : system_in_queue_(queues->system
         .timeout_ms = 5000,
         .crt_bundle_attach = esp_crt_bundle_attach
     };
+
+    wifi_interface_.init();
 }
 
 void NetworkManager::networkTask(void* pvParameters) {
     auto* self = static_cast<NetworkManager*>(pvParameters);
-
-    self->onStateChange(self->network_state);
-    NetworkState network_state_next = NetworkState::INIT;
-    NetworkEvent wifi_event;
-    uint32_t now;
-    uint32_t api_fetch_interval = pdMS_TO_TICKS(10000);
+    uint32_t now = 0;
     uint32_t last_api_fetch = 0;
+    uint32_t api_fetch_interval = pdMS_TO_TICKS(10000);
 
     while(true) {
-        if (xQueueReceive(self->network_in_queue_, &self->received_packet_, pdMS_TO_TICKS(self->kUpdateInterval_)) == pdPASS) {
-            ESP_LOGI(TAG, "networkTask::network_in_queue: %d", &self->received_packet_.type);
-            
-            if (self->received_packet_.type == PacketType::WIFI_EVENT) {
-                network_state_next = self->stateMachine(self->network_state, self->received_packet_.network_event);
+        if (xQueueReceive(self->network_in_queue_, &self->packet_, pdMS_TO_TICKS(self->kUpdateInterval_))) {
+            if (self->packet_.type == PacketType::WIFI_UPDATE) {
+                ESP_LOGI(TAG, "Packet - WIFI_UPDATE: %d", self->packet_.network_event);
             }
-            
-            if (network_state_next != self->network_state) {
-                self->network_state = network_state_next;
-                self->onStateChange(self->network_state);
-            }
-        } 
+        }
         now = xTaskGetTickCount();
-        if ((now - last_api_fetch > api_fetch_interval) && self->network_state == NetworkState::CONNECTED_STA) {
+        if ((now - last_api_fetch > api_fetch_interval) && self->packet_.network_event == WifiInterface::WifiState::CONNECTED_STA) {
             self->apiFetch(&self->http_cfg_);
             last_api_fetch = now;
         }
     }
-}
-
-NetworkManager::NetworkState NetworkManager::stateMachine(NetworkState current_state, NetworkEvent event) {
-    NetworkState next_state = current_state;
-
-    switch (current_state) {
-        case NetworkState::INIT:
-            if (event == NetworkEvent::STARTED) next_state = NetworkState::CONNECTING_STA;
-            break;
-        case NetworkState::CONNECTING_STA:
-            if (event == NetworkEvent::CONNECTED) next_state = NetworkState::CONNECTED_STA;
-            if (event == NetworkEvent::DISCONNECTED) next_state = NetworkState::DISCONNECTED;
-            break;
-        case NetworkState::CONNECTED_STA:
-            if (event == NetworkEvent::DISCONNECTED) next_state = NetworkState::DISCONNECTED;
-            break;
-        case NetworkState::DISCONNECTED:
-            if (event == NetworkEvent::CONNECTED) next_state = NetworkState::CONNECTED_STA;
-            if (event == NetworkEvent::RETRY_TIMER) {
-                if (reconnect_retires_++ >= 5) {
-                    next_state = NetworkState::ERROR;
-                } else {
-                    next_state = NetworkState::CONNECTING_STA;
-                }
-            }
-            if (event == NetworkEvent::ERROR) next_state = NetworkState::ERROR;
-            break;
-        case NetworkState::ERROR:
-            break;
-        default: break;
-    }
-    ESP_LOGI(TAG, "stateMachine::next_state: %d", next_state);
-    return next_state;
-}
-
-void NetworkManager::onStateChange(NetworkState new_state) {
-    switch (new_state) {
-        case NetworkState::INIT:
-            ESP_LOGI(TAG, "onStateChange::INIT");
-            wifi_interface_.init();
-            break;
-        case NetworkState::CONNECTING_STA:
-            ESP_LOGI(TAG, "onStateChange::CONNECTING_STA");
-            wifi_interface_.connect();
-            break;
-        case NetworkState::CONNECTED_STA:
-            ESP_LOGI(TAG, "onStateChange::CONNECTED_STA");
-            reconnect_retires_ = 0;
-            break;
-        case NetworkState::DISCONNECTED:
-            ESP_LOGI(TAG, "onStateChange::DISCONNECTED");
-            ESP_LOGW(TAG, "WiFi connection lost");
-            xTimerStart(wifi_reconnect_timer_, 0);
-            break;
-        case NetworkState::ERROR:
-            ESP_LOGI(TAG, "onStateChange::ERROR");
-            break;
-        default: break;
-    }
-}
-
-void NetworkManager::reconnectTimerCallback(TimerHandle_t xTimer) {
-    auto* self = static_cast<NetworkManager*>(pvTimerGetTimerID(xTimer));
-    DataPacket packet;
-    packet.type = PacketType::WIFI_EVENT;
-    packet.network_event = NetworkEvent::RETRY_TIMER;
-    xQueueSend(self->network_in_queue_, &packet, 0);
 }
 
 void NetworkManager::apiFetch(esp_http_client_config_t* cfg) {

@@ -10,13 +10,13 @@ SystemManager::SystemManager(Queues* queues) {
     network_in_queue_ = queues->network_in_queue;
     
     xTaskCreatePinnedToCore(     // UI Task
-      systemTask,                // Function to implement the task
-      "systemTask",              // Name of the task
-      8192,                      // Stack size in words
-      this,                      // Task input parameter
-      2,                         // Priority of the task
-      &task_system_manager_,     // Task handle.
-      0                          // Core where the task should run
+        systemTask,                // Function to implement the task
+        "systemTask",              // Name of the task
+        8192,                      // Stack size in words
+        this,                      // Task input parameter
+        2,                         // Priority of the task
+        &task_system_manager_,     // Task handle.
+        0                          // Core where the task should run
     );
     // settings_ = {
     //     .setting_transport_mode = TransportMode::METRO,

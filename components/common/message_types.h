@@ -1,25 +1,19 @@
 #pragma once
 #include "freertos/FreeRTOS.h"
+#include "wifi_interface.h"
 #include "types.h"
 
 enum class PacketType {
     WIFI_EVENT,
+    WIFI_UPDATE,
     NETWORK_EVENT,
     API_DATA,
     SETTINGS_DATA
 };
 
-enum class NetworkEvent{
-    STARTED,
-    CONNECTED,
-    DISCONNECTED,
-    RETRY_TIMER,
-    ERROR
-};
-
 struct DataPacket {
     PacketType type;
-    NetworkEvent network_event;
+    WifiInterface::WifiState network_event;
 };
 
 struct Departure {
