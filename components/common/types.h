@@ -1,6 +1,8 @@
 #pragma once
 
-enum class TransportMode {
+#include <stdint.h>
+
+enum class TransportMode : uint8_t {
     METRO,
     TRAM,
     TRAIN,
