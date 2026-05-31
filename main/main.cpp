@@ -10,12 +10,17 @@
 extern "C" void app_main(void)
 {
     systemInit();
+
+    // app_main only does system startup and wires the main managers together.
     Queues queues = {
         .system_in_queue = xQueueCreate(10, sizeof(DataPacket)),
         .network_in_queue = xQueueCreate(10, sizeof(DataPacket)),
     };
+
     SystemManager system_manager(&queues);
     NetworkManager network_manager(&queues);
+    system_manager.init();
+    network_manager.init();
 
     while(1) {
         vTaskDelay(portMAX_DELAY);

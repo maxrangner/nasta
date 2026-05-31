@@ -12,6 +12,7 @@ enum class SystemState {
     ERROR
 };
 
+// SystemManager owns app-facing state and system-side behavior.
 class SystemManager {
     TaskHandle_t task_system_manager_ = nullptr;
     QueueHandle_t system_in_queue_ = nullptr;
@@ -20,5 +21,6 @@ class SystemManager {
     DataPacket packet_;
 public:
     SystemManager(Queues* queues);
+    void init();
     static void systemTask(void* pvParameters);
 };

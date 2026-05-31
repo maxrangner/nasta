@@ -7,6 +7,7 @@
 #include "esp_event.h"
 #include "esp_wifi.h"
 
+// WifiInterface is a thin Wi-Fi helper owned by NetworkManager.
 class WifiInterface {
 public:
     enum class WifiState {

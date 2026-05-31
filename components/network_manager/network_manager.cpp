@@ -6,12 +6,31 @@
 
 static const char *TAG = "network manager";
 
-NetworkManager::NetworkManager(Queues* queues) : system_in_queue_(queues->system_in_queue), network_in_queue_(queues->network_in_queue), wifi_interface_(queues->network_in_queue) {
+NetworkManager::NetworkManager(Queues* queues)
+    : system_in_queue_(queues->system_in_queue),
+      network_in_queue_(queues->network_in_queue),
+      wifi_interface_(queues->network_in_queue) {
+}
+
+void NetworkManager::init() {
+    if (task_network_manager_ != nullptr) {
+        return;
+    }
+
     api_buffer = (char*)malloc(kMaxApiBufferSize_);
     if (api_buffer == nullptr) {
         ESP_LOGW(TAG, "kMaxApiBufferSize_ malloc failed");
     }
-    
+
+    http_cfg_ = {};
+    http_cfg_.url = "https://transport.integration.sl.se/v1/sites/9143/departures?transport=METRO&forecast=500";
+    // http_cfg_.url = "http://"CONFIG_EXAMPLE_HTTP_ENDPOINT"/get";
+    http_cfg_.method = HTTP_METHOD_GET;
+    http_cfg_.timeout_ms = 5000;
+    http_cfg_.crt_bundle_attach = esp_crt_bundle_attach;
+
+    wifi_interface_.init();
+
     xTaskCreatePinnedToCore(     // UI Task
         networkTask,               // Function to implement the task
         "networkTask",             // Name of the task
@@ -21,16 +40,6 @@ NetworkManager::NetworkManager(Queues* queues) : system_in_queue_(queues->system
         &task_network_manager_,    // Task handle.
         0                          // Core where the task should run
     );
-
-    http_cfg_ = {
-        .url = "https://transport.integration.sl.se/v1/sites/9143/departures?transport=METRO&forecast=500",
-        // .url = "http://"CONFIG_EXAMPLE_HTTP_ENDPOINT"/get",
-        .method = HTTP_METHOD_GET,
-        .timeout_ms = 5000,
-        .crt_bundle_attach = esp_crt_bundle_attach
-    };
-
-    wifi_interface_.init();
 }
 
 void NetworkManager::networkTask(void* pvParameters) {
