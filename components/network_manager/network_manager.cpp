@@ -35,6 +35,14 @@ void NetworkManager::sendStatus(NetworkStatus status) {
 
 bool NetworkManager::buildApiUrl() {
     const char* transport_filter = toTransportModeApiString(settings_.site.transport_filter);
+    const char* transport_filter_log = transport_filter[0] != '\0' ? transport_filter : "ANY";
+
+    ESP_LOGI(
+        TAG,
+        "Fetch config - site_id: %lu, transport: %s",
+        static_cast<unsigned long>(settings_.site.site_id),
+        transport_filter_log
+    );
 
     if (transport_filter[0] == '\0') {
         int written = snprintf(
@@ -391,14 +399,15 @@ bool NetworkManager::jsonParser(char* buffer) {
         cJSON* destination = cJSON_GetObjectItem(departure, "destination");
         cJSON* direction_code_json = cJSON_GetObjectItem(departure, "direction_code");
         cJSON* display = cJSON_GetObjectItem(departure, "display");
-        cJSON* transport_mode = cJSON_GetObjectItem(departure, "display");
         cJSON* line_json = cJSON_GetObjectItem(departure, "line");
         cJSON* line_id_json = cJSON_GetObjectItem(line_json, "id");
+        cJSON* transport_mode_json = cJSON_GetObjectItem(line_json, "transport_mode");
 
         if (!cJSON_IsString(destination) ||
             !cJSON_IsNumber(direction_code_json) ||
             !cJSON_IsString(display) ||
-            !cJSON_IsString(transport_mode) ||
+            !cJSON_IsObject(line_json) ||
+            !cJSON_IsString(transport_mode_json) ||
             !cJSON_IsNumber(line_id_json)) {
             ESP_LOGW(TAG, "Error parsing departure fields");
             cJSON_Delete(root);
@@ -407,10 +416,16 @@ bool NetworkManager::jsonParser(char* buffer) {
 
         uint8_t direction = direction_code_json->valueint;
         uint8_t line_number = line_id_json->valueint;
+        TransportMode transport_mode = toTransportMode(transport_mode_json->valuestring);
+
+        if (settings_.site.transport_filter != TransportMode::UNKNOWN &&
+            transport_mode != settings_.site.transport_filter) {
+            continue;
+        }
 
         snprintf(new_departure.destination, sizeof(new_departure.destination), "%s", destination->valuestring);
         snprintf(new_departure.display, sizeof(new_departure.display), "%s", display->valuestring);
-        new_departure.transport_mode = toTransportMode(transport_mode->valuestring);
+        new_departure.transport_mode = transport_mode;
         new_departure.line = line_number;
 
         if (direction >= 1 &&
