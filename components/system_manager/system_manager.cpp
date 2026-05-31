@@ -31,8 +31,12 @@ void SystemManager::systemTask(void* pvParameters) {
 
     while(true) {
         if (xQueueReceive(self->system_in_queue_, &self->packet_, pdMS_TO_TICKS(self->kUpdateInterval_))) {
-            if (self->packet_.type == PacketType::API_DATA) {
-                ESP_LOGI(TAG, "Packet - API_DATA");
+            if (self->packet_.type == SystemPacketType::NETWORK_STATUS) {
+                ESP_LOGI(TAG, "Packet - NETWORK_STATUS: %d", static_cast<int>(self->packet_.network_status));
+            }
+
+            if (self->packet_.type == SystemPacketType::DEPARTURES_DATA) {
+                ESP_LOGI(TAG, "Packet - DEPARTURES_DATA");
             }
         }
     }

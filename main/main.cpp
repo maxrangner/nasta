@@ -11,10 +11,9 @@ extern "C" void app_main(void)
 {
     systemInit();
 
-    // app_main only does system startup and wires the main managers together.
     Queues queues = {
-        .system_in_queue = xQueueCreate(10, sizeof(DataPacket)),
-        .network_in_queue = xQueueCreate(10, sizeof(DataPacket)),
+        .system_in_queue = xQueueCreate(10, sizeof(SystemPacket)),
+        .network_in_queue = xQueueCreate(10, sizeof(NetworkPacket)),
     };
 
     SystemManager system_manager(&queues);

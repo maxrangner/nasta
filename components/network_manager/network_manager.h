@@ -8,7 +8,6 @@
 #include "wifi_interface.h"
 #include "message_types.h"
 
-// NetworkManager owns Wi-Fi, API fetches and network-side data flow.
 class NetworkManager {
     enum class NetworkState {
         ONLINE,
@@ -21,7 +20,8 @@ class NetworkManager {
     QueueHandle_t system_in_queue_ = nullptr;
     QueueHandle_t network_in_queue_ = nullptr;
     WifiInterface wifi_interface_;
-    DataPacket packet_;
+    NetworkPacket packet_ {};
+    WifiLinkEvent wifi_link_event_ = WifiLinkEvent::LINK_DISCONNECTED;
     
     static constexpr uint32_t kUpdateInterval_ = 1000;
     static constexpr size_t kMaxApiBufferSize_ = 102400;
@@ -35,4 +35,5 @@ public:
 
     void apiFetch(esp_http_client_config_t* cfg);
     void jsonParser(char* buffer);
+    static NetworkStatus toNetworkStatus(WifiLinkEvent event);
 };

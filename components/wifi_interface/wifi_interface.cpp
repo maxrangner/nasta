@@ -157,30 +157,27 @@ WifiInterface::WifiState WifiInterface::stateMachine(WifiState current, WifiEven
 }
 
 void WifiInterface::handleStateChange(WifiState new_state) {
-    DataPacket packet{};
+    NetworkPacket packet{};
 
     switch (new_state) {
         case WifiState::CONNECTING_STA:
             ESP_LOGI(TAG, "handleStateChange::CONNECTING_STA");
             esp_wifi_connect();
-            packet.type = PacketType::WIFI_UPDATE;
-            packet.wifi_event = WifiLinkEvent::LINK_CONNECTING_STA;
+            packet.wifi_link_event = WifiLinkEvent::LINK_CONNECTING_STA;
             xQueueSend(network_in_queue_, &packet, 0);
             break;
 
         case WifiState::CONNECTED_STA:
             ESP_LOGI(TAG, "handleStateChange::CONNECTED_STA");
             retry_count_ = 0;
-            packet.type = PacketType::WIFI_UPDATE;
-            packet.wifi_event = WifiLinkEvent::LINK_CONNECTED_STA;
+            packet.wifi_link_event = WifiLinkEvent::LINK_CONNECTED_STA;
             xQueueSend(network_in_queue_, &packet, 0);
             break;
 
         case WifiState::DISCONNECTED:
             ESP_LOGI(TAG, "handleStateChange::DISCONNECTED");
             ESP_LOGW(TAG, "WiFi connection lost");
-            packet.type = PacketType::WIFI_UPDATE;
-            packet.wifi_event = WifiLinkEvent::LINK_DISCONNECTED;
+            packet.wifi_link_event = WifiLinkEvent::LINK_DISCONNECTED;
             xQueueSend(network_in_queue_, &packet, 0);
 
             if (retry_count_ < MAX_RETRIES_) {

@@ -50,16 +50,37 @@ void NetworkManager::networkTask(void* pvParameters) {
 
     while(true) {
         if (xQueueReceive(self->network_in_queue_, &self->packet_, pdMS_TO_TICKS(self->kUpdateInterval_))) {
-            if (self->packet_.type == PacketType::WIFI_UPDATE) {
-                ESP_LOGI(TAG, "Packet - WIFI_UPDATE: %d", self->packet_.wifi_event);
-            }
+            self->wifi_link_event_ = self->packet_.wifi_link_event;
+            ESP_LOGI(TAG, "Packet - WIFI_LINK_EVENT: %d", static_cast<int>(self->wifi_link_event_));
+
+            SystemPacket system_packet {};
+            system_packet.type = SystemPacketType::NETWORK_STATUS;
+            system_packet.network_status = self->toNetworkStatus(self->wifi_link_event_);
+
+            xQueueSend(self->system_in_queue_, &system_packet, 0);
         }
         now = xTaskGetTickCount();
-        if ((now - last_api_fetch > api_fetch_interval) && self->packet_.wifi_event == WifiLinkEvent::LINK_CONNECTED_STA) {
+        if ((now - last_api_fetch > api_fetch_interval) && self->wifi_link_event_ == WifiLinkEvent::LINK_CONNECTED_STA) {
             self->apiFetch(&self->http_cfg_);
             self->jsonParser(self->api_buffer);
             last_api_fetch = now;
         }
+    }
+}
+
+NetworkStatus NetworkManager::toNetworkStatus(WifiLinkEvent event) {
+    switch (event) {
+        case WifiLinkEvent::LINK_CONNECTING_STA:
+            return NetworkStatus::CONNECTING;
+        case WifiLinkEvent::LINK_CONNECTED_STA:
+            return NetworkStatus::CONNECTED;
+        case WifiLinkEvent::LINK_AP_ACTIVE:
+            return NetworkStatus::SETUP;
+        case WifiLinkEvent::LINK_ERROR:
+            return NetworkStatus::ERROR;
+        case WifiLinkEvent::LINK_DISCONNECTED:
+        default:
+            return NetworkStatus::DISCONNECTED;
     }
 }
 
@@ -186,8 +207,8 @@ void NetworkManager::jsonParser(char* buffer) {
 
         // ESP_LOGI(TAG, "num_departures: %d Next departure:\n%s: %s", count, destination->valuestring, display->valuestring);
     }
-    DataPacket packet {
-        .type = PacketType::API_DATA,
+    SystemPacket packet {
+        .type = SystemPacketType::DEPARTURES_DATA,
         .departures = new_departures
     };
     xQueueSend(system_in_queue_, &packet, 0);
