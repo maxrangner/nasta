@@ -21,6 +21,13 @@ void NetworkManager::setState(NetworkState new_state) {
     ESP_LOGI(TAG, "State -> %d", static_cast<int>(network_state_));
 }
 
+void NetworkManager::sendStatus(NetworkStatus status) {
+    SystemPacket packet {};
+    packet.type = SystemPacketType::NETWORK_STATUS;
+    packet.network_status = status;
+    xQueueSend(system_in_queue_, &packet, 0);
+}
+
 void NetworkManager::init() {
     if (task_network_manager_ != nullptr) {
         return;
@@ -38,8 +45,6 @@ void NetworkManager::init() {
     http_cfg_.timeout_ms = 5000;
     http_cfg_.crt_bundle_attach = esp_crt_bundle_attach;
 
-    wifi_interface_.init();
-
     xTaskCreatePinnedToCore(     // UI Task
         networkTask,               // Function to implement the task
         "networkTask",             // Name of the task
@@ -49,6 +54,12 @@ void NetworkManager::init() {
         &task_network_manager_,    // Task handle.
         0                          // Core where the task should run
     );
+
+    wifi_interface_.init();
+    setState(NetworkState::STA_CONNECTING);
+    sendStatus(NetworkStatus::CONNECTING);
+    wifi_interface_.setStaMode();
+    wifi_interface_.connect();
 }
 
 void NetworkManager::networkTask(void* pvParameters) {
@@ -64,6 +75,16 @@ void NetworkManager::networkTask(void* pvParameters) {
             self->handleWifiLinkEvent(self->wifi_link_event_);
         }
         now = xTaskGetTickCount();
+
+        if (self->retry_pending_ &&
+            (now - self->retry_start_time_) > pdMS_TO_TICKS(self->kRetryDelayMs_)) {
+            self->retry_pending_ = false;
+            self->setState(NetworkState::STA_RECONNECTING);
+            self->sendStatus(NetworkStatus::CONNECTING);
+            self->wifi_interface_.setStaMode();
+            self->wifi_interface_.connect();
+        }
+
         if ((now - last_api_fetch > api_fetch_interval) && self->wifi_link_event_ == WifiLinkEvent::LINK_CONNECTED_STA) {
             if (!self->apiFetch(&self->http_cfg_)) {
                 self->setState(NetworkState::API_ERROR);
@@ -84,58 +105,57 @@ void NetworkManager::networkTask(void* pvParameters) {
 void NetworkManager::handleWifiLinkEvent(WifiLinkEvent event) {
     switch (event) {
         case WifiLinkEvent::LINK_CONNECTING_STA:
-            if (network_state_ == NetworkState::STA_RECONNECTING) {
-                setState(NetworkState::STA_RECONNECTING);
-            }
-            else {
-                setState(NetworkState::STA_CONNECTING);
-            }
+            retry_pending_ = false;
+            setState(NetworkState::STA_CONNECTING);
+            sendStatus(NetworkStatus::CONNECTING);
             break;
 
         case WifiLinkEvent::LINK_CONNECTED_STA:
+            retry_pending_ = false;
+            retry_count_ = 0;
             setState(NetworkState::STA_CONNECTED);
+            sendStatus(NetworkStatus::CONNECTED);
             break;
 
         case WifiLinkEvent::LINK_AP_ACTIVE:
+            retry_pending_ = false;
             setState(NetworkState::AP_SETUP);
+            sendStatus(NetworkStatus::SETUP);
             break;
 
         case WifiLinkEvent::LINK_ERROR:
+            retry_pending_ = false;
             setState(NetworkState::NETWORK_ERROR);
+            sendStatus(NetworkStatus::ERROR);
             break;
 
         case WifiLinkEvent::LINK_DISCONNECTED:
+            sendStatus(NetworkStatus::DISCONNECTED);
             if (network_state_ == NetworkState::STA_CONNECTED ||
                 network_state_ == NetworkState::STA_CONNECTING ||
                 network_state_ == NetworkState::STA_RECONNECTING ||
                 network_state_ == NetworkState::API_ERROR) {
+                if (retry_pending_) {
+                    break;
+                }
+
+                if (retry_count_ >= kMaxRetries_) {
+                    retry_pending_ = false;
+                    setState(NetworkState::NETWORK_ERROR);
+                    sendStatus(NetworkStatus::ERROR);
+                    break;
+                }
+
+                retry_count_++;
+                retry_pending_ = true;
+                retry_start_time_ = xTaskGetTickCount();
                 setState(NetworkState::STA_RECONNECTING);
             }
             else {
                 setState(NetworkState::NETWORK_ERROR);
+                sendStatus(NetworkStatus::ERROR);
             }
             break;
-    }
-
-    SystemPacket system_packet {};
-    system_packet.type = SystemPacketType::NETWORK_STATUS;
-    system_packet.network_status = toNetworkStatus(event);
-    xQueueSend(system_in_queue_, &system_packet, 0);
-}
-
-NetworkStatus NetworkManager::toNetworkStatus(WifiLinkEvent event) {
-    switch (event) {
-        case WifiLinkEvent::LINK_CONNECTING_STA:
-            return NetworkStatus::CONNECTING;
-        case WifiLinkEvent::LINK_CONNECTED_STA:
-            return NetworkStatus::CONNECTED;
-        case WifiLinkEvent::LINK_AP_ACTIVE:
-            return NetworkStatus::SETUP;
-        case WifiLinkEvent::LINK_ERROR:
-            return NetworkStatus::ERROR;
-        case WifiLinkEvent::LINK_DISCONNECTED:
-        default:
-            return NetworkStatus::DISCONNECTED;
     }
 }
 
