@@ -7,7 +7,24 @@
 #include <string.h>
 
 static const char* TAG = "setup portal";
-static constexpr size_t kMaxSetupRequestLength = 256;
+static constexpr size_t kMaxEncodedSsidLength = kMaxWifiSsidLength * 3;
+static constexpr size_t kMaxEncodedPasswordLength = kMaxWifiPasswordLength * 3;
+static constexpr size_t kMaxSiteIdLength = 10;
+static constexpr size_t kMaxTransportValueLength = 15;
+static constexpr size_t kMaxDirectionValueLength = 3;
+
+static constexpr size_t kMaxSetupRequestLength =
+    sizeof("ssid=") - 1 +
+    kMaxEncodedSsidLength +
+    sizeof("&password=") - 1 +
+    kMaxEncodedPasswordLength +
+    sizeof("&site_id=") - 1 +
+    kMaxSiteIdLength +
+    sizeof("&transport=") - 1 +
+    kMaxTransportValueLength +
+    sizeof("&direction=") - 1 +
+    kMaxDirectionValueLength +
+    1;
 
 static const char* kSetupPage =
 R"html(
