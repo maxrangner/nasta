@@ -1,5 +1,6 @@
 #include "system_manager.h"
 #include "esp_log.h"
+
 static const char *TAG = "system manager";
 
 SystemManager::SystemManager(Queues* queues)
@@ -34,62 +35,93 @@ void SystemManager::setState(SystemState new_state) {
 }
 
 void SystemManager::updateSystemState() {
-    switch (snapshot_.connectivity) {
+    SystemState new_state = system_state_;
+
+    switch (network_state_.connectivity) {
         case NetworkStatus::DISCONNECTED:
-            setState(SystemState::NO_CONNECTION);
-            return;
+            new_state = SystemState::NO_CONNECTION;
+            break;
 
         case NetworkStatus::CONNECTING:
-            setState(SystemState::CONNECTING);
-            return;
+            new_state = SystemState::CONNECTING;
+            break;
 
         case NetworkStatus::SETUP:
-            setState(SystemState::SETUP);
-            return;
+            new_state = SystemState::SETUP;
+            break;
 
         case NetworkStatus::NETWORK_ERROR:
-            setState(SystemState::NETWORK_ERROR);
-            return;
+            new_state = SystemState::NETWORK_ERROR;
+            break;
 
         case NetworkStatus::CONNECTED:
             break;
     }
 
-    switch (snapshot_.fetch_status) {
-        case FetchStatus::IDLE:
-            setState(SystemState::CONNECTED);
-            return;
+    if (network_state_.connectivity == NetworkStatus::CONNECTED) {
+        switch (network_state_.fetch_status) {
+            case FetchStatus::IDLE:
+                new_state = SystemState::CONNECTED;
+                break;
 
-        case FetchStatus::FRESH:
-            if (totalDepartureCount(snapshot_.departures) == 0) {
-                setState(SystemState::NO_DEPARTURES);
-                return;
-            }
+            case FetchStatus::FRESH:
+                if (totalDepartureCount(network_state_.departures) == 0) {
+                    new_state = SystemState::NO_DEPARTURES;
+                    break;
+                }
 
-            setState(SystemState::DEPARTURES);
-            return;
+                new_state = SystemState::DEPARTURES;
+                break;
 
-        case FetchStatus::STALE:
-            if (totalDepartureCount(snapshot_.departures) == 0) {
-                setState(SystemState::API_ERROR);
-                return;
-            }
+            case FetchStatus::STALE:
+                if (totalDepartureCount(network_state_.departures) == 0) {
+                    new_state = SystemState::API_ERROR;
+                    break;
+                }
 
-            setState(SystemState::DEPARTURES);
-            return;
+                new_state = SystemState::DEPARTURES;
+                break;
 
-        case FetchStatus::API_ERROR:
-            setState(SystemState::API_ERROR);
-            return;
+            case FetchStatus::API_ERROR:
+                new_state = SystemState::API_ERROR;
+                break;
+        }
     }
+
+    setState(new_state);
+}
+
+void SystemManager::updateRenderState() {
+    render_state_.system_state = system_state_;
+    render_state_.selected_direction = selected_direction_;
+    render_state_.stale_data = network_state_.fetch_status == FetchStatus::STALE;
+    render_state_.active_departures = {};
+
+    if (selected_direction_ < 1 ||
+        selected_direction_ > kMaxDepartureDirections) {
+        return;
+    }
+
+    if (system_state_ != SystemState::DEPARTURES &&
+        system_state_ != SystemState::NO_DEPARTURES) {
+        return;
+    }
+
+    render_state_.active_departures =
+        network_state_.departures.directions[selected_direction_ - 1];
+}
+
+const RenderState& SystemManager::getRenderState() const {
+    return render_state_;
 }
 
 void SystemManager::systemTask(void* pvParameters) {
     auto* self = static_cast<SystemManager*>(pvParameters);
 
     while(true) {
-        if (xQueueReceive(self->system_in_queue_, &self->snapshot_, pdMS_TO_TICKS(self->kUpdateInterval_))) {
+        if (xQueueReceive(self->system_in_queue_, &self->network_state_, pdMS_TO_TICKS(self->kUpdateInterval_))) {
             self->updateSystemState();
+            self->updateRenderState();
         }
     }
 }

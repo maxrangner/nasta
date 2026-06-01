@@ -34,6 +34,18 @@ enum class FetchStatus {
     API_ERROR
 };
 
+enum class SystemState {
+    BOOT,
+    CONNECTING,
+    CONNECTED,
+    NO_CONNECTION,
+    SETUP,
+    DEPARTURES,
+    NO_DEPARTURES,
+    API_ERROR,
+    NETWORK_ERROR
+};
+
 static constexpr uint8_t kMaxDepartureDirections = 2;
 static constexpr uint8_t kMaxDeparturesPerDirection = 3;
 
@@ -67,4 +79,11 @@ struct NetworkSnapshot {
     NetworkStatus connectivity = NetworkStatus::DISCONNECTED;
     FetchStatus fetch_status = FetchStatus::IDLE;
     Departures departures {};
+};
+
+struct RenderState {
+    SystemState system_state = SystemState::BOOT;
+    uint8_t selected_direction = 1;
+    bool stale_data = false;
+    DirectionDepartures active_departures {};
 };
