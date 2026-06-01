@@ -43,9 +43,12 @@ class NetworkManager {
     httpd_handle_t setup_server_ = nullptr;
 
     esp_http_client_config_t http_cfg_ {};
+    void resetRuntimeState();
     void setState(NetworkState new_state);
     void handleWifiLinkEvent(WifiLinkEvent event);
+    void handleStartNormalMode(const DeviceSettings& settings);
     void handleStartSetupMode();
+    void sendSettingsUpdated();
     void sendSnapshot();
     bool buildApiUrl();
     void startSetupMode();

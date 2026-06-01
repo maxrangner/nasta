@@ -1,5 +1,6 @@
 #include "system_manager.h"
 #include "esp_log.h"
+#include "settings_storage.h"
 
 static const char *TAG = "system manager";
 
@@ -12,6 +13,13 @@ void SystemManager::init() {
     if (task_system_manager_ != nullptr) {
         return;
     }
+
+    if (!loadDeviceSettings(&settings_)) {
+        ESP_LOGI(TAG, "No stored settings loaded, using defaults");
+    }
+
+    applySettings(settings_);
+    boot_mode_ = decideBootMode(settings_);
 
     button_service_init();
 
@@ -26,6 +34,8 @@ void SystemManager::init() {
     button_init(&button_cfg, &main_button_);
 
     ESP_LOGI(TAG, "State -> %d", static_cast<int>(system_state_));
+    ESP_LOGI(TAG, "Boot mode -> %d", static_cast<int>(boot_mode_));
+    updateRenderState();
 
     xTaskCreatePinnedToCore(     // UI Task
         systemTask,                // Function to implement the task
@@ -36,6 +46,8 @@ void SystemManager::init() {
         &task_system_manager_,     // Task handle.
         0                          // Core where the task should run
     );
+
+    startBootFlow();
 }
 
 void SystemManager::handleButtonEvent(button_event_t event, uint8_t gpio_num, void* user_data) {
@@ -71,6 +83,32 @@ void SystemManager::setState(SystemState new_state) {
     ESP_LOGI(TAG, "State -> %d", static_cast<int>(system_state_));
 }
 
+void SystemManager::startBootFlow() {
+    NetworkPacket packet {};
+
+    if (boot_mode_ == BootMode::SETUP) {
+        packet.type = NetworkPacketType::START_SETUP_MODE;
+    }
+    else {
+        packet.type = NetworkPacketType::START_NORMAL_MODE;
+        packet.device_settings = settings_;
+    }
+
+    xQueueSend(network_in_queue_, &packet, 0);
+}
+
+void SystemManager::applySettings(const DeviceSettings& settings) {
+    settings_ = settings;
+    selected_direction_ = settings_.direction.selected_direction;
+
+    if (selected_direction_ < 1 ||
+        selected_direction_ > kMaxDepartureDirections) {
+        selected_direction_ = 1;
+    }
+
+    settings_.direction.selected_direction = selected_direction_;
+}
+
 void SystemManager::handleInputEvent(SystemInputEvent event) {
     switch (event) {
         case SystemInputEvent::TOGGLE_DIRECTION:
@@ -78,6 +116,7 @@ void SystemManager::handleInputEvent(SystemInputEvent event) {
             if (selected_direction_ > kMaxDepartureDirections) {
                 selected_direction_ = 1;
             }
+            settings_.direction.selected_direction = selected_direction_;
             updateRenderState();
             break;
 
@@ -189,6 +228,11 @@ void SystemManager::systemTask(void* pvParameters) {
 
                 case SystemMessageType::INPUT_EVENT:
                     self->handleInputEvent(self->message_.input_event);
+                    break;
+
+                case SystemMessageType::SETTINGS_UPDATED:
+                    self->applySettings(self->message_.device_settings);
+                    self->updateRenderState();
                     break;
             }
         }

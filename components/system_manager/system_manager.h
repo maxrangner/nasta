@@ -18,15 +18,19 @@ class SystemManager {
     static constexpr uint32_t kUpdateInterval_ = 100;
     button_t main_button_ {};
     SystemMessage message_ {};
+    DeviceSettings settings_ {};
     NetworkSnapshot network_state_ {};
     SystemState system_state_ = SystemState::BOOT;
     RenderState render_state_ {};
     uint8_t selected_direction_ = 1;
+    BootMode boot_mode_ = BootMode::SETUP;
 public:
     SystemManager(Queues* queues);
     void init();
     static void systemTask(void* pvParameters);
     static void handleButtonEvent(button_event_t event, uint8_t gpio_num, void* user_data);
+    void startBootFlow();
+    void applySettings(const DeviceSettings& settings);
     void setState(SystemState new_state);
     void handleInputEvent(SystemInputEvent event);
     void updateSystemState();

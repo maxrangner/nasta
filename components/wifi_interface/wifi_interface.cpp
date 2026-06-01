@@ -36,7 +36,12 @@ void WifiInterface::start() {
 
 void WifiInterface::stop() {
     ESP_LOGI(TAG, "stop");
-    ESP_ERROR_CHECK(esp_wifi_stop());
+    esp_err_t err = esp_wifi_stop();
+    if (err != ESP_OK &&
+        err != ESP_ERR_WIFI_NOT_INIT &&
+        err != ESP_ERR_WIFI_NOT_STARTED) {
+        ESP_ERROR_CHECK(err);
+    }
 }
 
 void WifiInterface::connect() {

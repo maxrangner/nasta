@@ -16,6 +16,13 @@ NetworkManager::NetworkManager(Queues* queues)
       wifi_interface_(queues->network_in_queue) {
 }
 
+void NetworkManager::resetRuntimeState() {
+    reconnection_attempts_ = 0;
+    prev_reconnect_attempt_ = 0;
+    prev_api_fetch_ = 0;
+    api_failures_ = 0;
+}
+
 void NetworkManager::setState(NetworkState new_state) {
     if (network_state_ == new_state) {
         return;
@@ -29,6 +36,13 @@ void NetworkManager::sendSnapshot() {
     SystemMessage message {};
     message.type = SystemMessageType::NETWORK_STATE;
     message.network_state = snapshot_;
+    xQueueSend(system_in_queue_, &message, 0);
+}
+
+void NetworkManager::sendSettingsUpdated() {
+    SystemMessage message {};
+    message.type = SystemMessageType::SETTINGS_UPDATED;
+    message.device_settings = settings_;
     xQueueSend(system_in_queue_, &message, 0);
 }
 
@@ -113,6 +127,19 @@ void NetworkManager::startNormalMode() {
     wifi_interface_.connect();
 }
 
+void NetworkManager::handleStartNormalMode(const DeviceSettings& settings) {
+    settings_ = settings;
+    resetRuntimeState();
+
+    stopSetupPortal(&setup_server_);
+
+    if (network_state_ != NetworkState::INIT) {
+        wifi_interface_.stop();
+    }
+
+    startNormalMode();
+}
+
 void NetworkManager::handleSetupConfig(const SetupConfig& config) {
     if (!isValidSetupConfig(config)) {
         ESP_LOGW(TAG, "Rejected invalid setup config");
@@ -129,9 +156,8 @@ void NetworkManager::handleSetupConfig(const SetupConfig& config) {
         return;
     }
 
-    stopSetupPortal(&setup_server_);
-    wifi_interface_.stop();
-    startNormalMode();
+    sendSettingsUpdated();
+    handleStartNormalMode(settings_);
 }
 
 void NetworkManager::handleStartSetupMode() {
@@ -139,13 +165,13 @@ void NetworkManager::handleStartSetupMode() {
         return;
     }
 
-    reconnection_attempts_ = 0;
-    prev_reconnect_attempt_ = 0;
-    prev_api_fetch_ = 0;
-    api_failures_ = 0;
-
+    resetRuntimeState();
     stopSetupPortal(&setup_server_);
-    wifi_interface_.stop();
+
+    if (network_state_ != NetworkState::INIT) {
+        wifi_interface_.stop();
+    }
+
     startSetupMode();
 }
 
@@ -154,12 +180,7 @@ void NetworkManager::init() {
         return;
     }
 
-    if (!loadDeviceSettings(&settings_)) {
-        ESP_LOGI(TAG, "No stored settings loaded, using defaults");
-    }
-
-    BootMode boot_mode = decideBootMode(settings_);
-    ESP_LOGI(TAG, "Boot mode -> %d", static_cast<int>(boot_mode));
+    wifi_interface_.init();
 
     xTaskCreatePinnedToCore(     // UI Task
         networkTask,               // Function to implement the task
@@ -170,15 +191,6 @@ void NetworkManager::init() {
         &task_network_manager_,    // Task handle.
         0                          // Core where the task should run
     );
-
-    wifi_interface_.init();
-
-    if (boot_mode == BootMode::SETUP) {
-        startSetupMode();
-        return;
-    }
-
-    startNormalMode();
 }
 
 void NetworkManager::networkTask(void* pvParameters) {
@@ -202,6 +214,11 @@ void NetworkManager::networkTask(void* pvParameters) {
                 case NetworkPacketType::START_SETUP_MODE:
                     ESP_LOGI(TAG, "Packet - START_SETUP_MODE");
                     self->handleStartSetupMode();
+                    break;
+
+                case NetworkPacketType::START_NORMAL_MODE:
+                    ESP_LOGI(TAG, "Packet - START_NORMAL_MODE");
+                    self->handleStartNormalMode(self->packet_.device_settings);
                     break;
             }
         }
