@@ -27,12 +27,14 @@ class NetworkManager {
     NetworkSnapshot snapshot_ {};
     TickType_t prev_reconnect_attempt_ = 0;
     TickType_t prev_api_fetch_ = 0;
+    TickType_t last_successful_fetch_ = 0;
     uint8_t reconnection_attempts_ = 0;
     uint8_t api_failures_ = 0;
     
     static constexpr uint32_t kUpdateInterval_ = 1000;
     static constexpr uint32_t kApiTiming_ = 10000;
     static constexpr uint32_t kReconnectTiming_ = 10000;
+    static constexpr uint32_t kStaleDataTiming_ = 30000;
     static constexpr uint8_t kMaxRetries_ = 5;
     static constexpr uint8_t kMaxApiFailures_ = 6;
     static constexpr size_t kMaxApiBufferSize_ = 102400;

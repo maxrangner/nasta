@@ -20,6 +20,7 @@ void NetworkManager::resetRuntimeState() {
     reconnection_attempts_ = 0;
     prev_reconnect_attempt_ = 0;
     prev_api_fetch_ = 0;
+    last_successful_fetch_ = 0;
     api_failures_ = 0;
 }
 
@@ -227,9 +228,8 @@ void NetworkManager::networkTask(void* pvParameters) {
         if (self->network_state_ == NetworkState::STA_RECONNECTING &&
             (now - self->prev_reconnect_attempt_) >= pdMS_TO_TICKS(self->kReconnectTiming_)) {
             if (self->reconnection_attempts_ >= self->kMaxRetries_) {
-                self->setState(NetworkState::NETWORK_ERROR);
-                self->snapshot_.connectivity = NetworkStatus::NETWORK_ERROR;
-                self->sendSnapshot();
+                ESP_LOGW(TAG, "Too many Wi-Fi reconnect failures, switching to setup mode");
+                self->handleStartSetupMode();
             }
             else {
                 self->reconnection_attempts_++;
@@ -239,6 +239,14 @@ void NetworkManager::networkTask(void* pvParameters) {
                 self->wifi_interface_.setStaMode();
                 self->wifi_interface_.connect();
             }
+        }
+
+        if (self->snapshot_.connectivity == NetworkStatus::CONNECTED &&
+            self->snapshot_.fetch_status == FetchStatus::FRESH &&
+            self->last_successful_fetch_ != 0 &&
+            (now - self->last_successful_fetch_) >= pdMS_TO_TICKS(self->kStaleDataTiming_)) {
+            self->snapshot_.fetch_status = FetchStatus::STALE;
+            self->sendSnapshot();
         }
 
         if (self->snapshot_.connectivity == NetworkStatus::CONNECTED &&
@@ -254,6 +262,7 @@ void NetworkManager::networkTask(void* pvParameters) {
 
             if (fetch_ok) {
                 self->api_failures_ = 0;
+                self->last_successful_fetch_ = now;
                 self->setState(NetworkState::STA_CONNECTED);
                 self->snapshot_.departures = latest_departures;
                 self->snapshot_.fetch_status = FetchStatus::FRESH;
@@ -354,15 +363,25 @@ bool NetworkManager::apiFetch() {
         return false;
     }
 
-    int32_t content_length = esp_http_client_fetch_headers(client);
-    if (content_length <= 0) {
-        ESP_LOGW(TAG, "Invalid content_length: %d", content_length);
+    int32_t header_length = esp_http_client_fetch_headers(client);
+    if (header_length < 0) {
+        ESP_LOGW(TAG, "Failed to fetch HTTP headers: %d", header_length);
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         return false;
     }
+
+    int status_code = esp_http_client_get_status_code(client);
+    if (status_code < 200 || status_code >= 300) {
+        ESP_LOGW(TAG, "Unexpected HTTP status: %d", status_code);
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    int64_t content_length = esp_http_client_get_content_length(client);
     if (content_length >= kMaxApiBufferSize_) {
-        ESP_LOGW(TAG, "content_length too large: %d", content_length);
+        ESP_LOGW(TAG, "content_length too large: %lld", content_length);
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         return false;
@@ -372,27 +391,72 @@ bool NetworkManager::apiFetch() {
     uint32_t start_tick = xTaskGetTickCount();
     const uint32_t max_wait_ticks = pdMS_TO_TICKS(5000);
 
-    while (total_read < static_cast<uint32_t>(content_length)) {
+    while (true) {
+        int32_t bytes_left = static_cast<int32_t>(kMaxApiBufferSize_ - total_read - 1);
+        if (bytes_left <= 0) {
+            ESP_LOGW(TAG, "API response too large for buffer");
+            esp_http_client_close(client);
+            esp_http_client_cleanup(client);
+            return false;
+        }
+
+        if (content_length > 0) {
+            int64_t remaining = content_length - total_read;
+            if (remaining <= 0) {
+                break;
+            }
+
+            if (remaining < bytes_left) {
+                bytes_left = static_cast<int32_t>(remaining);
+            }
+        }
+
         int32_t read = esp_http_client_read(client,
             api_buffer + total_read,
-            content_length - total_read
+            bytes_left
         );
         if (read < 0) {
             ESP_LOGW(TAG, "Read error");
-            break;
+            esp_http_client_close(client);
+            esp_http_client_cleanup(client);
+            return false;
         }
         if (read == 0) {
-            if ((xTaskGetTickCount() - start_tick) > max_wait_ticks) {
-                ESP_LOGW(TAG, "Read timeout");
+            if (esp_http_client_is_complete_data_received(client)) {
                 break;
             }
+
+            if ((xTaskGetTickCount() - start_tick) > max_wait_ticks) {
+                ESP_LOGW(TAG, "Read timeout");
+                esp_http_client_close(client);
+                esp_http_client_cleanup(client);
+                return false;
+            }
+
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
+
         total_read += read;
+        start_tick = xTaskGetTickCount();
     }
-    if (total_read != content_length) {
-        ESP_LOGW(TAG, "Incomplete body: %lu/%d", total_read, content_length);
+
+    if (!esp_http_client_is_complete_data_received(client)) {
+        ESP_LOGW(TAG, "HTTP body was not fully received");
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    if (content_length > 0 && total_read != static_cast<uint32_t>(content_length)) {
+        ESP_LOGW(TAG, "Incomplete body: %lu/%lld", total_read, content_length);
+        esp_http_client_close(client);
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    if (total_read == 0) {
+        ESP_LOGW(TAG, "Empty HTTP body");
         esp_http_client_close(client);
         esp_http_client_cleanup(client);
         return false;
