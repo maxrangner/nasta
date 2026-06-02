@@ -33,6 +33,19 @@ void NetworkManager::setState(NetworkState new_state) {
     ESP_LOGI(TAG, "State -> %d", static_cast<int>(network_state_));
 }
 
+bool NetworkManager::handleWifiError(esp_err_t err, const char* action) {
+    if (err == ESP_OK) {
+        return true;
+    }
+
+    waiting_for_ap_start_ = false;
+    ESP_LOGW(TAG, "%s failed: %s", action, esp_err_to_name(err));
+    setState(NetworkState::NETWORK_ERROR);
+    snapshot_.connectivity = NetworkStatus::NETWORK_ERROR;
+    sendSnapshot();
+    return false;
+}
+
 void NetworkManager::sendSnapshot() {
     SystemMessage message {};
     message.type = SystemMessageType::NETWORK_STATE;
@@ -86,9 +99,14 @@ void NetworkManager::startSetupMode() {
     snapshot_.fetch_status = FetchStatus::IDLE;
     snapshot_.departures = {};
     sendSnapshot();
-    wifi_interface_.setApMode();
-    wifi_interface_.setApConfig();
-    wifi_interface_.start();
+
+    if (!handleWifiError(wifi_interface_.setApMode(), "set AP mode")) {
+        return;
+    }
+    if (!handleWifiError(wifi_interface_.setApConfig(), "set AP config")) {
+        return;
+    }
+    handleWifiError(wifi_interface_.start(), "start AP mode");
 }
 
 void NetworkManager::startNormalMode() {
@@ -117,15 +135,22 @@ void NetworkManager::startNormalMode() {
     http_cfg_.timeout_ms = 5000;
     http_cfg_.crt_bundle_attach = esp_crt_bundle_attach;
 
-    wifi_interface_.setStaMode();
-    wifi_interface_.setStaConfig(settings_.wifi);
-    wifi_interface_.start();
+    if (!handleWifiError(wifi_interface_.setStaMode(), "set STA mode")) {
+        return;
+    }
+    if (!handleWifiError(wifi_interface_.setStaConfig(settings_.wifi), "set STA config")) {
+        return;
+    }
+    if (!handleWifiError(wifi_interface_.start(), "start STA mode")) {
+        return;
+    }
+
     setState(NetworkState::STA_CONNECTING);
     snapshot_.connectivity = NetworkStatus::CONNECTING;
     snapshot_.fetch_status = FetchStatus::IDLE;
     snapshot_.departures = {};
     sendSnapshot();
-    wifi_interface_.connect();
+    handleWifiError(wifi_interface_.connect(), "connect STA");
 }
 
 void NetworkManager::handleStartNormalMode(const DeviceSettings& settings) {
@@ -136,7 +161,9 @@ void NetworkManager::handleStartNormalMode(const DeviceSettings& settings) {
     stopSetupPortal(&setup_server_);
 
     if (network_state_ != NetworkState::INIT) {
-        wifi_interface_.stop();
+        if (!handleWifiError(wifi_interface_.stop(), "stop Wi-Fi")) {
+            return;
+        }
     }
 
     startNormalMode();
@@ -172,7 +199,9 @@ void NetworkManager::handleStartSetupMode() {
     stopSetupPortal(&setup_server_);
 
     if (network_state_ != NetworkState::INIT) {
-        wifi_interface_.stop();
+        if (!handleWifiError(wifi_interface_.stop(), "stop Wi-Fi")) {
+            return;
+        }
     }
 
     startSetupMode();
@@ -183,7 +212,9 @@ void NetworkManager::init() {
         return;
     }
 
-    wifi_interface_.init();
+    if (!handleWifiError(wifi_interface_.init(), "initialize Wi-Fi")) {
+        return;
+    }
 
     xTaskCreatePinnedToCore(       // UI Task
         networkTask,               // Function to implement the task
@@ -238,8 +269,10 @@ void NetworkManager::networkTask(void* pvParameters) {
                 self->prev_reconnect_attempt_ = now;
                 self->snapshot_.connectivity = NetworkStatus::CONNECTING;
                 self->sendSnapshot();
-                self->wifi_interface_.setStaMode();
-                self->wifi_interface_.connect();
+                if (!self->handleWifiError(self->wifi_interface_.setStaMode(), "set STA mode")) {
+                    continue;
+                }
+                self->handleWifiError(self->wifi_interface_.connect(), "connect STA");
             }
         }
 

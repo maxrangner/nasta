@@ -48,6 +48,7 @@ class NetworkManager {
     esp_http_client_config_t http_cfg_ {};
     void resetRuntimeState();
     void setState(NetworkState new_state);
+    bool handleWifiError(esp_err_t err, const char* action);
     void handleWifiLinkEvent(WifiLinkEvent event);
     void handleStartNormalMode(const DeviceSettings& settings);
     void handleStartSetupMode();

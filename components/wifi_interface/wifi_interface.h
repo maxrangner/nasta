@@ -11,14 +11,14 @@
 class WifiInterface {
 public:
     explicit WifiInterface(QueueHandle_t network_queue);
-    void init();
-    void start();
-    void stop();
-    void connect();
-    void setStaMode();
-    void setApMode();
-    void setStaConfig(const WifiSettings& settings);
-    void setApConfig();
+    esp_err_t init();
+    esp_err_t start();
+    esp_err_t stop();
+    esp_err_t connect();
+    esp_err_t setStaMode();
+    esp_err_t setApMode();
+    esp_err_t setStaConfig(const WifiSettings& settings);
+    esp_err_t setApConfig();
 
 private:
     static void wifiEventCallback(void* arg, 

@@ -10,64 +10,80 @@ WifiInterface::WifiInterface(QueueHandle_t queue)
     : network_in_queue_(queue) {
 }
 
-void WifiInterface::init() {
+esp_err_t WifiInterface::init() {
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    esp_err_t err = esp_wifi_init(&cfg);
+    if (err != ESP_OK) {
+        return err;
+    }
 
-    esp_event_handler_register(
+    err = esp_event_handler_register(
         WIFI_EVENT,
         ESP_EVENT_ANY_ID,
         &wifiEventCallback,
         this);
+    if (err != ESP_OK) {
+        return err;
+    }
 
-    esp_event_handler_register(
+    err = esp_event_handler_register(
         IP_EVENT,
         IP_EVENT_STA_GOT_IP,
         &wifiEventCallback,
         this);
+    if (err != ESP_OK) {
+        return err;
+    }
     
     ESP_LOGI(TAG, "wifi init finished");
+    return ESP_OK;
 }
 
-void WifiInterface::start() {
+esp_err_t WifiInterface::start() {
     ESP_LOGI(TAG, "start");
-    ESP_ERROR_CHECK(esp_wifi_start());
+    return esp_wifi_start();
 }
 
-void WifiInterface::stop() {
+esp_err_t WifiInterface::stop() {
     ESP_LOGI(TAG, "stop");
     esp_err_t err = esp_wifi_stop();
     if (err != ESP_OK &&
         err != ESP_ERR_WIFI_NOT_INIT &&
         err != ESP_ERR_WIFI_NOT_STARTED) {
-        ESP_ERROR_CHECK(err);
+        return err;
     }
+
+    return ESP_OK;
 }
 
-void WifiInterface::connect() {
+esp_err_t WifiInterface::connect() {
     ESP_LOGI(TAG, "connect");
-    ESP_ERROR_CHECK(esp_wifi_connect());
+    return esp_wifi_connect();
 }
 
-void WifiInterface::setStaMode() {
+esp_err_t WifiInterface::setStaMode() {
     ESP_LOGI(TAG, "setStaMode");
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    return esp_wifi_set_mode(WIFI_MODE_STA);
 }
 
-void WifiInterface::setApMode() {
+esp_err_t WifiInterface::setApMode() {
     ESP_LOGI(TAG, "setApMode");
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    return esp_wifi_set_mode(WIFI_MODE_AP);
 }
 
-void WifiInterface::setStaConfig(const WifiSettings& settings) {
+esp_err_t WifiInterface::setStaConfig(const WifiSettings& settings) {
     wifi_config_t credentials = toStaConfig(settings);
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &credentials));
-    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &credentials);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 }
 
-void WifiInterface::setApConfig() {
+esp_err_t WifiInterface::setApConfig() {
     wifi_config_t ap_config = toApConfig();
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+    return esp_wifi_set_config(WIFI_IF_AP, &ap_config);
 }
 
 void WifiInterface::wifiEventCallback(void* arg, 
