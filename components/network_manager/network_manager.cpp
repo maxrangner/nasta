@@ -311,8 +311,6 @@ void NetworkManager::handleWifiLinkEvent(WifiLinkEvent event) {
             prev_api_fetch_ = 0;
             api_failures_ = 0;
             setState(NetworkState::AP_SETUP);
-            snapshot_.connectivity = NetworkStatus::SETUP;
-            sendSnapshot();
             if (!startSetupPortal(&setup_server_, network_in_queue_)) {
                 setState(NetworkState::NETWORK_ERROR);
                 snapshot_.connectivity = NetworkStatus::NETWORK_ERROR;

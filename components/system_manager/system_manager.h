@@ -23,8 +23,6 @@ class SystemManager {
     NetworkSnapshot network_state_ {};
     SystemState system_state_ = SystemState::BOOT;
     RenderState render_state_ {};
-    uint8_t selected_direction_ = 1;
-    BootMode boot_mode_ = BootMode::SETUP;
     uint32_t animation_frame_ = 0;
 public:
     SystemManager(Queues* queues);

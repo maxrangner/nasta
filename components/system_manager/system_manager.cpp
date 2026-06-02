@@ -19,7 +19,7 @@ void SystemManager::init() {
     }
 
     applySettings(settings_);
-    boot_mode_ = decideBootMode(settings_);
+    BootMode boot_mode = decideBootMode(settings_);
 
     button_service_init();
 
@@ -35,7 +35,7 @@ void SystemManager::init() {
     matrix_.init();
 
     ESP_LOGI(TAG, "State -> %d", static_cast<int>(system_state_));
-    ESP_LOGI(TAG, "Boot mode -> %d", static_cast<int>(boot_mode_));
+    ESP_LOGI(TAG, "Boot mode -> %d", static_cast<int>(boot_mode));
     updateRenderState();
     renderDisplay();
 
@@ -87,8 +87,9 @@ void SystemManager::setState(SystemState new_state) {
 
 void SystemManager::startBootFlow() {
     NetworkPacket packet {};
+    BootMode boot_mode = decideBootMode(settings_);
 
-    if (boot_mode_ == BootMode::SETUP) {
+    if (boot_mode == BootMode::SETUP) {
         packet.type = NetworkPacketType::START_SETUP_MODE;
     }
     else {
@@ -101,24 +102,20 @@ void SystemManager::startBootFlow() {
 
 void SystemManager::applySettings(const DeviceSettings& settings) {
     settings_ = settings;
-    selected_direction_ = settings_.direction.selected_direction;
 
-    if (selected_direction_ < 1 ||
-        selected_direction_ > kMaxDepartureDirections) {
-        selected_direction_ = 1;
+    if (settings_.direction.selected_direction < 1 ||
+        settings_.direction.selected_direction > kMaxDepartureDirections) {
+        settings_.direction.selected_direction = 1;
     }
-
-    settings_.direction.selected_direction = selected_direction_;
 }
 
 void SystemManager::handleInputEvent(SystemInputEvent event) {
     switch (event) {
         case SystemInputEvent::TOGGLE_DIRECTION:
-            selected_direction_++;
-            if (selected_direction_ > kMaxDepartureDirections) {
-                selected_direction_ = 1;
+            settings_.direction.selected_direction++;
+            if (settings_.direction.selected_direction > kMaxDepartureDirections) {
+                settings_.direction.selected_direction = 1;
             }
-            settings_.direction.selected_direction = selected_direction_;
             updateRenderState();
             break;
 
@@ -193,13 +190,15 @@ void SystemManager::updateSystemState() {
 }
 
 void SystemManager::updateRenderState() {
+    uint8_t selected_direction = settings_.direction.selected_direction;
+
     render_state_.system_state = system_state_;
-    render_state_.selected_direction = selected_direction_;
+    render_state_.selected_direction = selected_direction;
     render_state_.stale_data = network_state_.fetch_status == FetchStatus::STALE;
     render_state_.active_departures = {};
 
-    if (selected_direction_ < 1 ||
-        selected_direction_ > kMaxDepartureDirections) {
+    if (selected_direction < 1 ||
+        selected_direction > kMaxDepartureDirections) {
         return;
     }
 
@@ -209,7 +208,7 @@ void SystemManager::updateRenderState() {
     }
 
     render_state_.active_departures =
-        network_state_.departures.directions[selected_direction_ - 1];
+        network_state_.departures.directions[selected_direction - 1];
 }
 
 void SystemManager::updateAnimationFrame() {
