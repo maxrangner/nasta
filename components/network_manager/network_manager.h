@@ -30,6 +30,7 @@ class NetworkManager {
     TickType_t last_successful_fetch_ = 0;
     uint8_t reconnection_attempts_ = 0;
     uint8_t api_failures_ = 0;
+    bool waiting_for_ap_start_ = false;
     
     static constexpr uint32_t kUpdateInterval_ = 1000;
     static constexpr uint32_t kApiTiming_ = 10000;

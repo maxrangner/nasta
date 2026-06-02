@@ -131,6 +131,7 @@ void NetworkManager::startNormalMode() {
 void NetworkManager::handleStartNormalMode(const DeviceSettings& settings) {
     settings_ = settings;
     resetRuntimeState();
+    waiting_for_ap_start_ = false;
 
     stopSetupPortal(&setup_server_);
 
@@ -162,11 +163,12 @@ void NetworkManager::handleSetupConfig(const SetupConfig& config) {
 }
 
 void NetworkManager::handleStartSetupMode() {
-    if (network_state_ == NetworkState::AP_SETUP) {
+    if (network_state_ == NetworkState::AP_SETUP || waiting_for_ap_start_) {
         return;
     }
 
     resetRuntimeState();
+    waiting_for_ap_start_ = true;
     stopSetupPortal(&setup_server_);
 
     if (network_state_ != NetworkState::INIT) {
@@ -310,6 +312,7 @@ void NetworkManager::handleWifiLinkEvent(WifiLinkEvent event) {
             prev_reconnect_attempt_ = 0;
             prev_api_fetch_ = 0;
             api_failures_ = 0;
+            waiting_for_ap_start_ = false;
             setState(NetworkState::AP_SETUP);
             if (!startSetupPortal(&setup_server_, network_in_queue_)) {
                 setState(NetworkState::NETWORK_ERROR);
@@ -319,6 +322,11 @@ void NetworkManager::handleWifiLinkEvent(WifiLinkEvent event) {
             break;
 
         case WifiLinkEvent::LINK_DISCONNECTED:
+            if (waiting_for_ap_start_) {
+                ESP_LOGI(TAG, "Ignoring STA disconnect while switching to setup mode");
+                break;
+            }
+
             if (snapshot_.fetch_status == FetchStatus::FRESH) {
                 snapshot_.fetch_status = FetchStatus::STALE;
             }
