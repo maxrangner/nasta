@@ -2,10 +2,8 @@
 
 #include <driver/gpio.h>
 #include <esp_attr.h>
-#include <esp_log.h>
+#include <esp_err.h>
 #include <esp_timer.h>
-
-static const char *TAG = "button_driver";
 
 static void IRAM_ATTR button_isr(void *arg)
 {
@@ -30,7 +28,6 @@ void button_timer_cb(TimerHandle_t xTimer)
             return;
         }
         uint64_t pressed_time = (now - handle->press_time) / 1000;
-        ESP_LOGI(TAG, "Button pressed for %lld ms", pressed_time);
         if (pressed_time >= handle->long_press_dur) {
             event = BTN_LONG_PRESS;
             handle->btn_callback(event, handle->gpio_num, handle->user_data);

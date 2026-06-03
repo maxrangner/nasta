@@ -1,5 +1,6 @@
 #pragma once
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "app_context.h"
 #include "button_driver.h"
@@ -7,15 +8,18 @@
 #include "message_types.h"
 
 class SystemManager {
-    static constexpr uint32_t kMainButtonPin_ = 0;
+    static constexpr uint32_t kMainButtonPin_ = 3;
     static constexpr bool kMainButtonHasPullup_ = true;
     static constexpr uint16_t kButtonDebounceMs_ = 50;
     static constexpr uint16_t kButtonLongPressMs_ = 3000;
+    static constexpr UBaseType_t kButtonQueueLength_ = 4;
     static constexpr BaseType_t kTaskCore_ = 0;
 
     TaskHandle_t task_system_manager_ = nullptr;
     QueueHandle_t system_in_queue_ = nullptr;
     QueueHandle_t network_in_queue_ = nullptr;
+    QueueHandle_t button_in_queue_ = nullptr;
+    QueueSetHandle_t event_queue_set_ = nullptr;
     static constexpr uint32_t kUpdateInterval_ = 100;
     LedMatrix matrix_ {};
     button_t main_button_ {};

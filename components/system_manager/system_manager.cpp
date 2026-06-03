@@ -61,6 +61,25 @@ void SystemManager::init() {
     applySettings(settings_);
     BootMode boot_mode = decideBootMode(settings_);
 
+    button_in_queue_ = xQueueCreate(
+        kButtonQueueLength_,
+        sizeof(SystemInputEvent)
+    );
+    event_queue_set_ = xQueueCreateSet(
+        kSystemQueueLength + kButtonQueueLength_
+    );
+
+    if (button_in_queue_ == nullptr || event_queue_set_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create system manager queues");
+        return;
+    }
+
+    if (xQueueAddToSet(system_in_queue_, event_queue_set_) != pdPASS ||
+        xQueueAddToSet(button_in_queue_, event_queue_set_) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to configure system manager queue set");
+        return;
+    }
+
     button_service_init();
 
     button_cfg_t button_cfg = {
@@ -109,29 +128,26 @@ void SystemManager::handleButtonCallback(button_event_t event, uint8_t gpio_num,
     (void)gpio_num;
 
     auto* self = static_cast<SystemManager*>(user_data);
-    if (self == nullptr) {
+    if (self == nullptr || self->button_in_queue_ == nullptr) {
         return;
     }
 
-    SystemEvent system_event {};
-    system_event.type = SystemEventType::INPUT_EVENT;
+    SystemInputEvent input_event {};
 
     switch (event) {
         case BTN_SHORT_PRESS:
-            system_event.input_event = SystemInputEvent::TOGGLE_DIRECTION;
+            input_event = SystemInputEvent::TOGGLE_DIRECTION;
             break;
 
         case BTN_LONG_PRESS:
-            system_event.input_event = SystemInputEvent::FORCE_SETUP;
+            input_event = SystemInputEvent::FORCE_SETUP;
             break;
 
         default:
             return;
     }
 
-    if (xQueueSend(self->system_in_queue_, &system_event, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to queue system event: %d", static_cast<int>(system_event.type));
-    }
+    (void)xQueueSend(self->button_in_queue_, &input_event, 0);
 }
 
 void SystemManager::setState(SystemState new_state) {
@@ -187,9 +203,11 @@ void SystemManager::handleButtonInput(SystemInputEvent event) {
             if (selected_direction_ > kMaxDepartureDirections) {
                 selected_direction_ = 1;
             }
+            ESP_LOGI(TAG, "Direction -> %u", static_cast<unsigned>(selected_direction_));
             break;
 
         case SystemInputEvent::FORCE_SETUP: {
+            ESP_LOGI(TAG, "Button requested setup mode");
             NetworkCommand command {};
             command.type = NetworkCommandType::START_SETUP_MODE;
 
@@ -310,14 +328,28 @@ void SystemManager::renderDisplay() {
 
 void SystemManager::systemTask(void* pvParameters) {
     auto* self = static_cast<SystemManager*>(pvParameters);
-    SystemEvent system_event {};
+    QueueSetMemberHandle_t ready_queue = nullptr;
 
     while(true) {
-        if (xQueueReceive(
-            self->system_in_queue_,
-            &system_event,
+        ready_queue = xQueueSelectFromSet(
+            self->event_queue_set_,
             pdMS_TO_TICKS(self->kUpdateInterval_)
-        ) == pdTRUE) {
+        );
+
+        if (ready_queue == self->button_in_queue_) {
+            SystemInputEvent input_event {};
+
+            if (xQueueReceive(self->button_in_queue_, &input_event, 0) == pdTRUE) {
+                self->handleButtonInput(input_event);
+            }
+        }
+        else if (ready_queue == self->system_in_queue_) {
+            SystemEvent system_event {};
+
+            if (xQueueReceive(self->system_in_queue_, &system_event, 0) != pdTRUE) {
+                continue;
+            }
+
             switch (system_event.type) {
                 case SystemEventType::NETWORK_STATE:
                     self->network_state_ = system_event.network_state;
