@@ -12,8 +12,8 @@ extern "C" void app_main(void)
     systemInit();
 
     Queues queues = {
-        .system_in_queue = xQueueCreate(10, sizeof(SystemMessage)),
-        .network_in_queue = xQueueCreate(10, sizeof(NetworkPacket)),
+        .system_in_queue = xQueueCreate(kSystemQueueLength, sizeof(SystemEvent)),
+        .network_in_queue = xQueueCreate(kNetworkQueueLength, sizeof(NetworkCommand)),
     };
 
     SystemManager system_manager(&queues);

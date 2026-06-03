@@ -10,27 +10,23 @@
 #include "settings.h"
 
 class NetworkManager {
-    enum class NetworkState {
-        INIT,
-        STA_CONNECTING,
-        STA_CONNECTED,
-        STA_RECONNECTING,
-        AP_SETUP,
-        NETWORK_ERROR
+    enum class NetworkMode {
+        NONE,
+        NORMAL,
+        SETUP
     };
-    NetworkState network_state_ = NetworkState::INIT;
+    NetworkMode mode_ = NetworkMode::NONE;
     TaskHandle_t task_network_manager_ = nullptr;
     QueueHandle_t system_in_queue_ = nullptr;
     QueueHandle_t network_in_queue_ = nullptr;
     WifiInterface wifi_interface_;
-    NetworkPacket packet_ {};
-    NetworkSnapshot snapshot_ {};
+    NetworkCommand command_ {};
+    NetworkState network_state_ {};
     TickType_t prev_reconnect_attempt_ = 0;
     TickType_t prev_api_fetch_ = 0;
     TickType_t last_successful_fetch_ = 0;
     uint8_t reconnection_attempts_ = 0;
     uint8_t api_failures_ = 0;
-    bool waiting_for_ap_start_ = false;
     
     static constexpr uint32_t kUpdateInterval_ = 1000;
     static constexpr uint32_t kApiTiming_ = 10000;
@@ -47,12 +43,12 @@ class NetworkManager {
 
     esp_http_client_config_t http_cfg_ {};
     void resetRuntimeState();
-    void setState(NetworkState new_state);
+    void setNetworkPhase(NetworkPhase new_phase);
     bool handleWifiError(esp_err_t err, const char* action);
     void handleWifiLinkEvent(WifiLinkEvent event);
     void handleStartNormalMode(const DeviceSettings& settings);
     void handleStartSetupMode();
-    void sendSnapshot();
+    void sendNetworkState();
     bool buildApiUrl();
     void startSetupMode();
     void startNormalMode();

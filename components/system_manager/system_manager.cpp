@@ -13,29 +13,47 @@ static uint8_t normalizeDirection(uint8_t direction) {
     return direction;
 }
 
-static bool sendSystemMessage(
+static DirectionDepartures getActiveDepartures(
+    const NetworkState& network_state,
+    SystemState system_state,
+    uint8_t selected_direction
+) {
+    if (selected_direction < 1 ||
+        selected_direction > kMaxDepartureDirections) {
+        return {};
+    }
+
+    if (system_state != SystemState::DEPARTURES &&
+        system_state != SystemState::NO_DEPARTURES) {
+        return {};
+    }
+
+    return network_state.departures.directions[selected_direction - 1];
+}
+
+static bool sendSystemEvent(
     QueueHandle_t queue,
-    const SystemMessage& message,
+    const SystemEvent& event,
     TickType_t wait_ticks = 0
 ) {
-    if (xQueueSend(queue, &message, wait_ticks) == pdTRUE) {
+    if (xQueueSend(queue, &event, wait_ticks) == pdTRUE) {
         return true;
     }
 
-    ESP_LOGW(TAG, "Failed to queue system message: %d", static_cast<int>(message.type));
+    ESP_LOGW(TAG, "Failed to queue system event: %d", static_cast<int>(event.type));
     return false;
 }
 
-static bool sendNetworkPacket(
+static bool sendNetworkCommand(
     QueueHandle_t queue,
-    const NetworkPacket& packet,
+    const NetworkCommand& command,
     TickType_t wait_ticks = 0
 ) {
-    if (xQueueSend(queue, &packet, wait_ticks) == pdTRUE) {
+    if (xQueueSend(queue, &command, wait_ticks) == pdTRUE) {
         return true;
     }
 
-    ESP_LOGW(TAG, "Failed to queue network packet: %d", static_cast<int>(packet.type));
+    ESP_LOGW(TAG, "Failed to queue network command: %d", static_cast<int>(command.type));
     return false;
 }
 
@@ -63,7 +81,7 @@ void SystemManager::init() {
         .hasPullup = kMainButtonHasPullup_,
         .debounce = kButtonDebounceMs_,
         .long_press_dur = kButtonLongPressMs_,
-        .btn_callback = handleButtonEvent,
+        .btn_callback = handleButtonCallback,
         .user_data = this,
     };
     button_init(&button_cfg, &main_button_);
@@ -71,7 +89,6 @@ void SystemManager::init() {
 
     ESP_LOGI(TAG, "State -> %d", static_cast<int>(system_state_));
     ESP_LOGI(TAG, "Boot mode -> %d", static_cast<int>(boot_mode));
-    updateRenderState();
     renderDisplay();
 
     xTaskCreatePinnedToCore(       // UI Task
@@ -87,7 +104,7 @@ void SystemManager::init() {
     startBootFlow();
 }
 
-void SystemManager::handleButtonEvent(button_event_t event, uint8_t gpio_num, void* user_data) {
+void SystemManager::handleButtonCallback(button_event_t event, uint8_t gpio_num, void* user_data) {
     (void)gpio_num;
 
     auto* self = static_cast<SystemManager*>(user_data);
@@ -95,20 +112,20 @@ void SystemManager::handleButtonEvent(button_event_t event, uint8_t gpio_num, vo
         return;
     }
 
-    SystemMessage message {};
-    message.type = SystemMessageType::INPUT_EVENT;
+    SystemEvent system_event {};
+    system_event.type = SystemEventType::INPUT_EVENT;
 
     switch (event) {
         case BTN_SHORT_PRESS:
-            message.input_event = SystemInputEvent::TOGGLE_DIRECTION;
+            system_event.input_event = SystemInputEvent::TOGGLE_DIRECTION;
             break;
 
         case BTN_LONG_PRESS:
-            message.input_event = SystemInputEvent::FORCE_SETUP;
+            system_event.input_event = SystemInputEvent::FORCE_SETUP;
             break;
     }
 
-    sendSystemMessage(self->system_in_queue_, message);
+    sendSystemEvent(self->system_in_queue_, system_event);
 }
 
 void SystemManager::setState(SystemState new_state) {
@@ -121,20 +138,20 @@ void SystemManager::setState(SystemState new_state) {
 }
 
 void SystemManager::startBootFlow() {
-    NetworkPacket packet {};
+    NetworkCommand command {};
     BootMode boot_mode = decideBootMode(settings_);
 
     if (boot_mode == BootMode::SETUP) {
-        packet.type = NetworkPacketType::START_SETUP_MODE;
+        command.type = NetworkCommandType::START_SETUP_MODE;
     }
     else {
-        packet.type = NetworkPacketType::START_NORMAL_MODE;
-        packet.device_settings = settings_;
+        command.type = NetworkCommandType::START_NORMAL_MODE;
+        command.settings = settings_;
     }
 
-    sendNetworkPacket(
+    sendNetworkCommand(
         network_in_queue_,
-        packet,
+        command,
         pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
     );
 }
@@ -158,73 +175,65 @@ void SystemManager::handleSetupConfig(const SetupConfig& config) {
     if (!saveDeviceSettings(updated_settings)) {
         ESP_LOGW(TAG, "Failed to save setup config");
         setState(SystemState::NETWORK_ERROR);
-        updateRenderState();
         return;
     }
 
     applySettings(updated_settings);
-    updateRenderState();
     startBootFlow();
 }
 
-void SystemManager::handleInputEvent(SystemInputEvent event) {
+void SystemManager::handleButtonInput(SystemInputEvent event) {
     switch (event) {
         case SystemInputEvent::TOGGLE_DIRECTION:
             selected_direction_++;
             if (selected_direction_ > kMaxDepartureDirections) {
                 selected_direction_ = 1;
             }
-            updateRenderState();
             break;
 
         case SystemInputEvent::FORCE_SETUP: {
-            NetworkPacket packet {};
-            packet.type = NetworkPacketType::START_SETUP_MODE;
+            NetworkCommand command {};
+            command.type = NetworkCommandType::START_SETUP_MODE;
 
-            if (sendNetworkPacket(
+            if (sendNetworkCommand(
                 network_in_queue_,
-                packet,
+                command,
                 pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
             )) {
                 setState(SystemState::SETUP);
-                updateRenderState();
             }
             break;
         }
     }
 }
 
-void SystemManager::updateSystemState() {
+void SystemManager::setSystemState() {
     SystemState new_state = system_state_;
 
-    switch (network_state_.connectivity) {
-        case NetworkStatus::DISCONNECTED:
-            new_state = SystemState::NO_CONNECTION;
-            break;
-
-        case NetworkStatus::CONNECTING:
+    switch (network_state_.phase) {
+        case NetworkPhase::CONNECTING:
             new_state = SystemState::CONNECTING;
             break;
 
-        case NetworkStatus::SETUP:
+        case NetworkPhase::SETUP:
             new_state = SystemState::SETUP;
             break;
 
-        case NetworkStatus::NETWORK_ERROR:
+        case NetworkPhase::ERROR:
             new_state = SystemState::NETWORK_ERROR;
             break;
 
-        case NetworkStatus::CONNECTED:
+        case NetworkPhase::READY:
             break;
     }
 
-    if (network_state_.connectivity == NetworkStatus::CONNECTED) {
-        switch (network_state_.fetch_status) {
-            case FetchStatus::IDLE:
+    if (network_state_.phase == NetworkPhase::READY) {
+        switch (network_state_.departure_state) {
+            case DepartureState::NONE:
                 new_state = SystemState::CONNECTED;
                 break;
 
-            case FetchStatus::FRESH:
+            case DepartureState::READY:
                 if (totalDepartureCount(network_state_.departures) == 0) {
                     new_state = SystemState::NO_DEPARTURES;
                     break;
@@ -233,16 +242,7 @@ void SystemManager::updateSystemState() {
                 new_state = SystemState::DEPARTURES;
                 break;
 
-            case FetchStatus::STALE:
-                if (totalDepartureCount(network_state_.departures) == 0) {
-                    new_state = SystemState::API_ERROR;
-                    break;
-                }
-
-                new_state = SystemState::DEPARTURES;
-                break;
-
-            case FetchStatus::API_ERROR:
+            case DepartureState::API_ERROR:
                 new_state = SystemState::API_ERROR;
                 break;
         }
@@ -251,34 +251,15 @@ void SystemManager::updateSystemState() {
     setState(new_state);
 }
 
-void SystemManager::updateRenderState() {
-    uint8_t selected_direction = selected_direction_;
-
-    render_state_.system_state = system_state_;
-    render_state_.selected_direction = selected_direction;
-    render_state_.stale_data = network_state_.fetch_status == FetchStatus::STALE;
-    render_state_.active_departures = {};
-
-    if (selected_direction < 1 ||
-        selected_direction > kMaxDepartureDirections) {
-        return;
-    }
-
-    if (system_state_ != SystemState::DEPARTURES &&
-        system_state_ != SystemState::NO_DEPARTURES) {
-        return;
-    }
-
-    render_state_.active_departures =
-        network_state_.departures.directions[selected_direction - 1];
-}
-
 void SystemManager::updateAnimationFrame() {
     animation_frame_++;
 }
 
 void SystemManager::renderDisplay() {
-    switch (render_state_.system_state) {
+    DirectionDepartures active_departures =
+        getActiveDepartures(network_state_, system_state_, selected_direction_);
+
+    switch (system_state_) {
         case SystemState::BOOT:
             matrix_.bootAnimation(animation_frame_);
             break;
@@ -293,11 +274,6 @@ void SystemManager::renderDisplay() {
             matrix_.displayIcon(MatrixIcon::OK);
             break;
 
-        case SystemState::NO_CONNECTION:
-            matrix_.setColor(16, 0, 0);
-            matrix_.connectionAnimation(animation_frame_);
-            break;
-
         case SystemState::SETUP:
             matrix_.setColor(0, 16, 16);
             matrix_.displayIcon(MatrixIcon::HEART);
@@ -305,18 +281,18 @@ void SystemManager::renderDisplay() {
 
         case SystemState::DEPARTURES:
             matrix_.setColor(
-                render_state_.stale_data ? 16 : 0,
+                network_state_.stale_data ? 16 : 0,
                 16,
                 0
             );
 
-            if (render_state_.active_departures.count == 0) {
+            if (active_departures.count == 0) {
                 matrix_.displayIcon(MatrixIcon::QUESTION);
                 break;
             }
 
             matrix_.displayDeparture(
-                render_state_.active_departures.departures[0].display,
+                active_departures.departures[0].display,
                 animation_frame_
             );
             break;
@@ -338,28 +314,27 @@ void SystemManager::renderDisplay() {
     }
 }
 
-const RenderState& SystemManager::getRenderState() const {
-    return render_state_;
-}
-
 void SystemManager::systemTask(void* pvParameters) {
     auto* self = static_cast<SystemManager*>(pvParameters);
 
     while(true) {
-        if (xQueueReceive(self->system_in_queue_, &self->message_, pdMS_TO_TICKS(self->kUpdateInterval_))) {
-            switch (self->message_.type) {
-                case SystemMessageType::NETWORK_STATE:
-                    self->network_state_ = self->message_.network_state;
-                    self->updateSystemState();
-                    self->updateRenderState();
+        if (xQueueReceive(
+            self->system_in_queue_,
+            &self->system_event_,
+            pdMS_TO_TICKS(self->kUpdateInterval_)
+        ) == pdTRUE) {
+            switch (self->system_event_.type) {
+                case SystemEventType::NETWORK_STATE:
+                    self->network_state_ = self->system_event_.network_state;
+                    self->setSystemState();
                     break;
 
-                case SystemMessageType::INPUT_EVENT:
-                    self->handleInputEvent(self->message_.input_event);
+                case SystemEventType::INPUT_EVENT:
+                    self->handleButtonInput(self->system_event_.input_event);
                     break;
 
-                case SystemMessageType::SETUP_CONFIG:
-                    self->handleSetupConfig(self->message_.setup_config);
+                case SystemEventType::SETUP_CONFIG:
+                    self->handleSetupConfig(self->system_event_.setup_config);
                     break;
             }
         }

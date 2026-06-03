@@ -7,16 +7,16 @@ static const char *TAG = "wifi interface";
 static constexpr const char* kSetupApSsid = "sl-go-mini-setup";
 static constexpr uint32_t kLinkEventSendTimeoutMs = 10;
 
-static bool sendNetworkPacket(
+static bool sendNetworkCommand(
     QueueHandle_t queue,
-    const NetworkPacket& packet,
+    const NetworkCommand& command,
     TickType_t wait_ticks = 0
 ) {
-    if (xQueueSend(queue, &packet, wait_ticks) == pdTRUE) {
+    if (xQueueSend(queue, &command, wait_ticks) == pdTRUE) {
         return true;
     }
 
-    ESP_LOGW(TAG, "Failed to queue network packet: %d", static_cast<int>(packet.type));
+    ESP_LOGW(TAG, "Failed to queue network command: %d", static_cast<int>(command.type));
     return false;
 }
 
@@ -136,12 +136,12 @@ wifi_config_t WifiInterface::toApConfig() {
 }
 
 void WifiInterface::sendLinkEvent(WifiLinkEvent event) {
-    NetworkPacket packet {};
-    packet.type = NetworkPacketType::WIFI_LINK_EVENT;
-    packet.wifi_link_event = event;
-    sendNetworkPacket(
+    NetworkCommand command {};
+    command.type = NetworkCommandType::WIFI_LINK_EVENT;
+    command.wifi_link_event = event;
+    sendNetworkCommand(
         network_in_queue_,
-        packet,
+        command,
         pdMS_TO_TICKS(kLinkEventSendTimeoutMs)
     );
 }

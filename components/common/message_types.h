@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 #include "settings.h"
 #include "types.h"
 
@@ -8,30 +9,28 @@ enum class WifiLinkEvent {
     LINK_AP_ACTIVE
 };
 
-enum class NetworkPacketType {
+enum class NetworkCommandType {
     WIFI_LINK_EVENT,
-    START_SETUP_MODE,
-    START_NORMAL_MODE
+    START_NORMAL_MODE,
+    START_SETUP_MODE
 };
 
-struct NetworkPacket {
-    NetworkPacketType type = NetworkPacketType::WIFI_LINK_EVENT;
+struct NetworkCommand {
+    NetworkCommandType type = NetworkCommandType::WIFI_LINK_EVENT;
     WifiLinkEvent wifi_link_event = WifiLinkEvent::LINK_DISCONNECTED;
-    DeviceSettings device_settings {};
+    DeviceSettings settings {};
 };
 
-enum class NetworkStatus {
-    DISCONNECTED,
+enum class NetworkPhase : uint8_t {
     CONNECTING,
-    CONNECTED,
     SETUP,
-    NETWORK_ERROR
+    READY,
+    ERROR
 };
 
-enum class FetchStatus {
-    IDLE,
-    FRESH,
-    STALE,
+enum class DepartureState : uint8_t {
+    NONE,
+    READY,
     API_ERROR
 };
 
@@ -39,7 +38,6 @@ enum class SystemState {
     BOOT,
     CONNECTING,
     CONNECTED,
-    NO_CONNECTION,
     SETUP,
     DEPARTURES,
     NO_DEPARTURES,
@@ -76,33 +74,27 @@ inline uint8_t totalDepartureCount(const Departures& departures) {
     return count;
 }
 
-struct NetworkSnapshot {
-    NetworkStatus connectivity = NetworkStatus::DISCONNECTED;
-    FetchStatus fetch_status = FetchStatus::IDLE;
+struct NetworkState {
+    NetworkPhase phase = NetworkPhase::CONNECTING;
+    DepartureState departure_state = DepartureState::NONE;
+    bool stale_data = false;
     Departures departures {};
 };
 
-enum class SystemInputEvent {
+enum class SystemInputEvent : uint8_t {
     TOGGLE_DIRECTION,
     FORCE_SETUP
 };
 
-enum class SystemMessageType {
+enum class SystemEventType {
     NETWORK_STATE,
     INPUT_EVENT,
     SETUP_CONFIG
 };
 
-struct SystemMessage {
-    SystemMessageType type = SystemMessageType::NETWORK_STATE;
-    NetworkSnapshot network_state {};
+struct SystemEvent {
+    SystemEventType type = SystemEventType::NETWORK_STATE;
+    NetworkState network_state {};
     SystemInputEvent input_event = SystemInputEvent::TOGGLE_DIRECTION;
     SetupConfig setup_config {};
-};
-
-struct RenderState {
-    SystemState system_state = SystemState::BOOT;
-    uint8_t selected_direction = 1;
-    bool stale_data = false;
-    DirectionDepartures active_departures {};
 };

@@ -121,10 +121,10 @@ static void urlDecode(char* destination, size_t destination_size, const char* so
 }
 
 static bool queueSetupConfig(QueueHandle_t system_in_queue, const SetupConfig& config) {
-    SystemMessage message {};
-    message.type = SystemMessageType::SETUP_CONFIG;
-    message.setup_config = config;
-    return xQueueSend(system_in_queue, &message, 0) == pdTRUE;
+    SystemEvent event {};
+    event.type = SystemEventType::SETUP_CONFIG;
+    event.setup_config = config;
+    return xQueueSend(system_in_queue, &event, 0) == pdTRUE;
 }
 
 static esp_err_t sendSetupErrorResponse(httpd_req_t* req) {
