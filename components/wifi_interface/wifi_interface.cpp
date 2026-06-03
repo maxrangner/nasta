@@ -1,5 +1,6 @@
 #include "wifi_interface.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 #include "message_types.h"
 #include <string.h>
 
@@ -25,6 +26,14 @@ WifiInterface::WifiInterface(QueueHandle_t queue)
 }
 
 esp_err_t WifiInterface::init() {
+    if (esp_netif_create_default_wifi_sta() == nullptr) {
+        return ESP_FAIL;
+    }
+
+    if (esp_netif_create_default_wifi_ap() == nullptr) {
+        return ESP_FAIL;
+    }
+
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_err_t err = esp_wifi_init(&cfg);
     if (err != ESP_OK) {

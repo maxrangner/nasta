@@ -179,7 +179,18 @@ void SystemManager::handleSetupConfig(const SetupConfig& config) {
     }
 
     applySettings(updated_settings);
-    startBootFlow();
+
+    NetworkCommand command {};
+    command.type = NetworkCommandType::START_NORMAL_MODE;
+    command.settings = settings_;
+
+    if (!sendNetworkCommand(
+        network_in_queue_,
+        command,
+        pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
+    )) {
+        setState(SystemState::NETWORK_ERROR);
+    }
 }
 
 void SystemManager::handleButtonInput(SystemInputEvent event) {

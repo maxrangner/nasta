@@ -18,8 +18,8 @@ extern "C" void app_main(void)
 
     SystemManager system_manager(&queues);
     NetworkManager network_manager(&queues);
-    system_manager.init();
     network_manager.init();
+    system_manager.init();
 
     while(1) {
         vTaskDelay(portMAX_DELAY);
