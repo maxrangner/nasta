@@ -11,6 +11,7 @@ class SystemManager {
     static constexpr bool kMainButtonHasPullup_ = true;
     static constexpr uint16_t kButtonDebounceMs_ = 50;
     static constexpr uint16_t kButtonLongPressMs_ = 3000;
+    static constexpr BaseType_t kTaskCore_ = 0;
 
     TaskHandle_t task_system_manager_ = nullptr;
     QueueHandle_t system_in_queue_ = nullptr;

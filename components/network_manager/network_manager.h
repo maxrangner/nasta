@@ -16,6 +16,7 @@ class NetworkManager {
         SETUP
     };
     NetworkMode mode_ = NetworkMode::NONE;
+    static constexpr BaseType_t kTaskCore_ = 1;
     TaskHandle_t task_network_manager_ = nullptr;
     QueueHandle_t system_in_queue_ = nullptr;
     QueueHandle_t network_in_queue_ = nullptr;

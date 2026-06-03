@@ -3,6 +3,7 @@
 #include "esp_err.h"
 #include "matrix_animations.h"
 #include "matrix_graphics.h"
+#include "soc/soc_caps.h"
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,14 +21,20 @@ void LedMatrix::init() {
     led_strip_rmt_config_t rmt_config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = 10 * 1000 * 1000,
-        .mem_block_symbols = 0,
+        .mem_block_symbols = 256,
         .flags = {
+#if SOC_RMT_SUPPORT_DMA
+            .with_dma = true,
+#else
             .with_dma = false,
+#endif
         },
     };
 
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip_));
     ESP_ERROR_CHECK(led_strip_clear(led_strip_));
+    memset(pixel_buffer_, 0, sizeof(pixel_buffer_));
+    frame_dirty_ = false;
 }
 
 void LedMatrix::clear() {
@@ -36,6 +43,8 @@ void LedMatrix::clear() {
     }
 
     ESP_ERROR_CHECK(led_strip_clear(led_strip_));
+    memset(pixel_buffer_, 0, sizeof(pixel_buffer_));
+    frame_dirty_ = false;
 }
 
 void LedMatrix::setColor(uint8_t red, uint8_t green, uint8_t blue) {
@@ -81,17 +90,40 @@ void LedMatrix::bootAnimation(uint32_t frame) {
 
     for (uint16_t i = 0; i < kLedCount_; i++) {
         if (graphic[i] == 1) {
-            ESP_ERROR_CHECK(led_strip_set_pixel(led_strip_, i, red, green, blue));
+            setPixel(i, red, green, blue);
         } else {
-            ESP_ERROR_CHECK(led_strip_set_pixel(led_strip_, i, 0, 0, 0));
+            setPixel(i, 0, 0, 0);
         }
     }
 
-    ESP_ERROR_CHECK(led_strip_refresh(led_strip_));
+    refreshIfDirty();
 }
 
 void LedMatrix::connectionAnimation(uint32_t frame) {
     drawGraphic(kWorkAnimation[frame % 4]);
+}
+
+void LedMatrix::setPixel(uint16_t index, uint8_t red, uint8_t green, uint8_t blue) {
+    if (pixel_buffer_[index][0] == red &&
+        pixel_buffer_[index][1] == green &&
+        pixel_buffer_[index][2] == blue) {
+        return;
+    }
+
+    pixel_buffer_[index][0] = red;
+    pixel_buffer_[index][1] = green;
+    pixel_buffer_[index][2] = blue;
+    frame_dirty_ = true;
+    ESP_ERROR_CHECK(led_strip_set_pixel(led_strip_, index, red, green, blue));
+}
+
+void LedMatrix::refreshIfDirty() {
+    if (led_strip_ == nullptr || !frame_dirty_) {
+        return;
+    }
+
+    ESP_ERROR_CHECK(led_strip_refresh(led_strip_));
+    frame_dirty_ = false;
 }
 
 void LedMatrix::drawGraphic(const uint8_t* graphic) {
@@ -101,13 +133,13 @@ void LedMatrix::drawGraphic(const uint8_t* graphic) {
 
     for (uint16_t i = 0; i < kLedCount_; i++) {
         if (graphic[i] == 1) {
-            ESP_ERROR_CHECK(led_strip_set_pixel(led_strip_, i, red_, green_, blue_));
+            setPixel(i, red_, green_, blue_);
         } else {
-            ESP_ERROR_CHECK(led_strip_set_pixel(led_strip_, i, 0, 0, 0));
+            setPixel(i, 0, 0, 0);
         }
     }
 
-    ESP_ERROR_CHECK(led_strip_refresh(led_strip_));
+    refreshIfDirty();
 }
 
 void LedMatrix::scrollGraphics(const uint8_t** graphic_sequence,
@@ -135,14 +167,14 @@ void LedMatrix::scrollGraphics(const uint8_t** graphic_sequence,
             pixel_value = graphic_sequence[graphic_index][row * graphic_width + graphic_col];
 
             if (pixel_value == 1) {
-                ESP_ERROR_CHECK(led_strip_set_pixel(led_strip_, led_index, red_, green_, blue_));
+                setPixel(led_index, red_, green_, blue_);
             } else {
-                ESP_ERROR_CHECK(led_strip_set_pixel(led_strip_, led_index, 0, 0, 0));
+                setPixel(led_index, 0, 0, 0);
             }
         }
     }
 
-    ESP_ERROR_CHECK(led_strip_refresh(led_strip_));
+    refreshIfDirty();
 }
 
 void LedMatrix::displayNumber(uint8_t number) {

@@ -85,7 +85,7 @@ void SystemManager::init() {
         this,                      // Task input parameter
         2,                         // Priority of the task
         &task_system_manager_,     // Task handle.
-        0                          // Core where the task should run
+        kTaskCore_                 // Core where the task should run
     );
 
     NetworkCommand command {};
