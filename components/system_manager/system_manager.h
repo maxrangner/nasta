@@ -12,15 +12,13 @@ class SystemManager {
     static constexpr bool kMainButtonHasPullup_ = true;
     static constexpr uint16_t kButtonDebounceMs_ = 50;
     static constexpr uint16_t kButtonLongPressMs_ = 3000;
-    static constexpr UBaseType_t kButtonQueueLength_ = 4;
     static constexpr BaseType_t kTaskCore_ = 0;
+    static constexpr BaseType_t kPixelBrightness_ = 1;
+    static constexpr uint32_t kUpdateInterval_ = 100;
 
     TaskHandle_t task_system_manager_ = nullptr;
     QueueHandle_t system_in_queue_ = nullptr;
     QueueHandle_t network_in_queue_ = nullptr;
-    QueueHandle_t button_in_queue_ = nullptr;
-    QueueSetHandle_t event_queue_set_ = nullptr;
-    static constexpr uint32_t kUpdateInterval_ = 100;
     LedMatrix matrix_ {};
     button_t main_button_ {};
     DeviceSettings settings_ {};
@@ -35,10 +33,6 @@ public:
 private:
     static void systemTask(void* pvParameters);
     static void handleButtonCallback(button_event_t event, uint8_t gpio_num, void* user_data);
-    void applySettings(const DeviceSettings& settings);
-    void handleSetupConfig(const SetupConfig& config);
     void setState(SystemState new_state);
-    void handleButtonInput(SystemInputEvent event);
-    void setSystemState();
     void renderDisplay();
 };

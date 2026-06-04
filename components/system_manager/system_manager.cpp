@@ -5,45 +5,6 @@
 static const char *TAG = "system manager";
 static constexpr uint32_t kControlQueueSendTimeoutMs = 10;
 
-static uint8_t normalizeDirection(uint8_t direction) {
-    if (direction < 1 || direction > kMaxDepartureDirections) {
-        return 1;
-    }
-
-    return direction;
-}
-
-static DirectionDepartures getActiveDepartures(
-    const NetworkState& network_state,
-    SystemState system_state,
-    uint8_t selected_direction
-) {
-    if (selected_direction < 1 ||
-        selected_direction > kMaxDepartureDirections) {
-        return {};
-    }
-
-    if (system_state != SystemState::DEPARTURES &&
-        system_state != SystemState::NO_DEPARTURES) {
-        return {};
-    }
-
-    return network_state.departures.directions[selected_direction - 1];
-}
-
-static bool sendNetworkCommand(
-    QueueHandle_t queue,
-    const NetworkCommand& command,
-    TickType_t wait_ticks = 0
-) {
-    if (xQueueSend(queue, &command, wait_ticks) == pdTRUE) {
-        return true;
-    }
-
-    ESP_LOGW(TAG, "Failed to queue network command: %d", static_cast<int>(command.type));
-    return false;
-}
-
 SystemManager::SystemManager(Queues* queues)
     : system_in_queue_(queues->system_in_queue),
       network_in_queue_(queues->network_in_queue) {
@@ -58,27 +19,13 @@ void SystemManager::init() {
         ESP_LOGI(TAG, "No stored settings loaded, using defaults");
     }
 
-    applySettings(settings_);
+    if (settings_.startup_direction != 1 &&
+        settings_.startup_direction != 2) {
+        settings_.startup_direction = 1;
+    }
+
+    selected_direction_ = settings_.startup_direction;
     BootMode boot_mode = decideBootMode(settings_);
-
-    button_in_queue_ = xQueueCreate(
-        kButtonQueueLength_,
-        sizeof(SystemInputEvent)
-    );
-    event_queue_set_ = xQueueCreateSet(
-        kSystemQueueLength + kButtonQueueLength_
-    );
-
-    if (button_in_queue_ == nullptr || event_queue_set_ == nullptr) {
-        ESP_LOGE(TAG, "Failed to create system manager queues");
-        return;
-    }
-
-    if (xQueueAddToSet(system_in_queue_, event_queue_set_) != pdPASS ||
-        xQueueAddToSet(button_in_queue_, event_queue_set_) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to configure system manager queue set");
-        return;
-    }
 
     button_service_init();
 
@@ -117,37 +64,40 @@ void SystemManager::init() {
         command.settings = settings_;
     }
 
-    sendNetworkCommand(
+    if (xQueueSend(
         network_in_queue_,
-        command,
+        &command,
         pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
-    );
+    ) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to queue network command: %d", static_cast<int>(command.type));
+    }
 }
 
 void SystemManager::handleButtonCallback(button_event_t event, uint8_t gpio_num, void* user_data) {
     (void)gpio_num;
 
     auto* self = static_cast<SystemManager*>(user_data);
-    if (self == nullptr || self->button_in_queue_ == nullptr) {
+    if (self == nullptr || self->system_in_queue_ == nullptr) {
         return;
     }
 
-    SystemInputEvent input_event {};
+    SystemEvent system_event {};
+    system_event.type = SystemEventType::INPUT_EVENT;
 
     switch (event) {
         case BTN_SHORT_PRESS:
-            input_event = SystemInputEvent::TOGGLE_DIRECTION;
+            system_event.input_event = SystemInputEvent::TOGGLE_DIRECTION;
             break;
 
         case BTN_LONG_PRESS:
-            input_event = SystemInputEvent::FORCE_SETUP;
+            system_event.input_event = SystemInputEvent::FORCE_SETUP;
             break;
 
         default:
             return;
     }
 
-    (void)xQueueSend(self->button_in_queue_, &input_event, 0);
+    (void)xQueueSend(self->system_in_queue_, &system_event, 0);
 }
 
 void SystemManager::setState(SystemState new_state) {
@@ -159,117 +109,15 @@ void SystemManager::setState(SystemState new_state) {
     ESP_LOGI(TAG, "State -> %d", static_cast<int>(system_state_));
 }
 
-void SystemManager::applySettings(const DeviceSettings& settings) {
-    settings_ = settings;
-    settings_.direction.startup_direction =
-        normalizeDirection(settings_.direction.startup_direction);
-    selected_direction_ = settings_.direction.startup_direction;
-}
-
-void SystemManager::handleSetupConfig(const SetupConfig& config) {
-    if (!isValidSetupConfig(config)) {
-        ESP_LOGW(TAG, "Rejected invalid setup config");
-        return;
-    }
-
-    DeviceSettings updated_settings = settings_;
-    applySetupConfig(updated_settings, config);
-
-    if (!saveDeviceSettings(updated_settings)) {
-        ESP_LOGW(TAG, "Failed to save setup config");
-        setState(SystemState::NETWORK_ERROR);
-        return;
-    }
-
-    applySettings(updated_settings);
-
-    NetworkCommand command {};
-    command.type = NetworkCommandType::START_NORMAL_MODE;
-    command.settings = settings_;
-
-    if (!sendNetworkCommand(
-        network_in_queue_,
-        command,
-        pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
-    )) {
-        setState(SystemState::NETWORK_ERROR);
-    }
-}
-
-void SystemManager::handleButtonInput(SystemInputEvent event) {
-    switch (event) {
-        case SystemInputEvent::TOGGLE_DIRECTION:
-            selected_direction_++;
-            if (selected_direction_ > kMaxDepartureDirections) {
-                selected_direction_ = 1;
-            }
-            ESP_LOGI(TAG, "Direction -> %u", static_cast<unsigned>(selected_direction_));
-            break;
-
-        case SystemInputEvent::FORCE_SETUP: {
-            ESP_LOGI(TAG, "Button requested setup mode");
-            NetworkCommand command {};
-            command.type = NetworkCommandType::START_SETUP_MODE;
-
-            if (sendNetworkCommand(
-                network_in_queue_,
-                command,
-                pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
-            )) {
-                setState(SystemState::SETUP);
-            }
-            break;
-        }
-    }
-}
-
-void SystemManager::setSystemState() {
-    SystemState new_state = system_state_;
-
-    switch (network_state_.phase) {
-        case NetworkPhase::CONNECTING:
-            new_state = SystemState::CONNECTING;
-            break;
-
-        case NetworkPhase::SETUP:
-            new_state = SystemState::SETUP;
-            break;
-
-        case NetworkPhase::ERROR:
-            new_state = SystemState::NETWORK_ERROR;
-            break;
-
-        case NetworkPhase::READY:
-            break;
-    }
-
-    if (network_state_.phase == NetworkPhase::READY) {
-        switch (network_state_.departure_state) {
-            case DepartureState::NONE:
-                new_state = SystemState::CONNECTED;
-                break;
-
-            case DepartureState::READY:
-                if (totalDepartureCount(network_state_.departures) == 0) {
-                    new_state = SystemState::NO_DEPARTURES;
-                    break;
-                }
-
-                new_state = SystemState::DEPARTURES;
-                break;
-
-            case DepartureState::API_ERROR:
-                new_state = SystemState::API_ERROR;
-                break;
-        }
-    }
-
-    setState(new_state);
-}
-
 void SystemManager::renderDisplay() {
-    DirectionDepartures active_departures =
-        getActiveDepartures(network_state_, system_state_, selected_direction_);
+    DirectionDepartures active_departures {};
+
+    if ((system_state_ == SystemState::DEPARTURES ||
+         system_state_ == SystemState::NO_DEPARTURES) &&
+        selected_direction_ >= 1 &&
+        selected_direction_ <= kMaxDepartureDirections) {
+        active_departures = network_state_.departures.directions[selected_direction_ - 1];
+    }
 
     switch (system_state_) {
         case SystemState::BOOT:
@@ -277,24 +125,24 @@ void SystemManager::renderDisplay() {
             break;
 
         case SystemState::CONNECTING:
-            matrix_.setColor(0, 0, 16);
+            matrix_.setColor(0, 0, kPixelBrightness_);
             matrix_.connectionAnimation(animation_frame_);
             break;
 
         case SystemState::CONNECTED:
-            matrix_.setColor(0, 16, 0);
+            matrix_.setColor(0, kPixelBrightness_, 0);
             matrix_.displayIcon(MatrixIcon::OK);
             break;
 
         case SystemState::SETUP:
-            matrix_.setColor(0, 16, 16);
+            matrix_.setColor(0, kPixelBrightness_, kPixelBrightness_);
             matrix_.displayIcon(MatrixIcon::HEART);
             break;
 
         case SystemState::DEPARTURES:
             matrix_.setColor(
-                network_state_.stale_data ? 16 : 0,
-                16,
+                network_state_.stale_data ? kPixelBrightness_ : 0,
+                kPixelBrightness_,
                 0
             );
 
@@ -310,17 +158,17 @@ void SystemManager::renderDisplay() {
             break;
 
         case SystemState::NO_DEPARTURES:
-            matrix_.setColor(16, 16, 0);
+            matrix_.setColor(kPixelBrightness_, kPixelBrightness_, 0);
             matrix_.displayIcon(MatrixIcon::QUESTION);
             break;
 
         case SystemState::API_ERROR:
-            matrix_.setColor(16, 0, 0);
+            matrix_.setColor(kPixelBrightness_, 0, 0);
             matrix_.displayIcon(MatrixIcon::QUESTION);
             break;
 
         case SystemState::NETWORK_ERROR:
-            matrix_.setColor(16, 0, 0);
+            matrix_.setColor(kPixelBrightness_, 0, 0);
             matrix_.displayIcon(MatrixIcon::CROSS);
             break;
     }
@@ -328,41 +176,132 @@ void SystemManager::renderDisplay() {
 
 void SystemManager::systemTask(void* pvParameters) {
     auto* self = static_cast<SystemManager*>(pvParameters);
-    QueueSetMemberHandle_t ready_queue = nullptr;
 
     while(true) {
-        ready_queue = xQueueSelectFromSet(
-            self->event_queue_set_,
+        SystemEvent system_event {};
+
+        if (xQueueReceive(
+            self->system_in_queue_,
+            &system_event,
             pdMS_TO_TICKS(self->kUpdateInterval_)
-        );
-
-        if (ready_queue == self->button_in_queue_) {
-            SystemInputEvent input_event {};
-
-            if (xQueueReceive(self->button_in_queue_, &input_event, 0) == pdTRUE) {
-                self->handleButtonInput(input_event);
-            }
-        }
-        else if (ready_queue == self->system_in_queue_) {
-            SystemEvent system_event {};
-
-            if (xQueueReceive(self->system_in_queue_, &system_event, 0) != pdTRUE) {
-                continue;
-            }
-
+        ) == pdTRUE) {
             switch (system_event.type) {
-                case SystemEventType::NETWORK_STATE:
+                case SystemEventType::NETWORK_STATE: {
+                    SystemState new_state = self->system_state_;
                     self->network_state_ = system_event.network_state;
-                    self->setSystemState();
-                    break;
 
-                case SystemEventType::INPUT_EVENT:
-                    self->handleButtonInput(system_event.input_event);
-                    break;
+                    switch (self->network_state_.phase) {
+                        case NetworkPhase::CONNECTING:
+                            new_state = SystemState::CONNECTING;
+                            break;
 
-                case SystemEventType::SETUP_CONFIG:
-                    self->handleSetupConfig(system_event.setup_config);
+                        case NetworkPhase::SETUP:
+                            new_state = SystemState::SETUP;
+                            break;
+
+                        case NetworkPhase::ERROR:
+                            new_state = SystemState::NETWORK_ERROR;
+                            break;
+
+                        case NetworkPhase::READY:
+                            switch (self->network_state_.departure_state) {
+                                case DepartureState::NONE:
+                                    new_state = SystemState::CONNECTED;
+                                    break;
+
+                                case DepartureState::READY:
+                                    if (totalDepartureCount(self->network_state_.departures) == 0) {
+                                        new_state = SystemState::NO_DEPARTURES;
+                                        break;
+                                    }
+
+                                    new_state = SystemState::DEPARTURES;
+                                    break;
+
+                                case DepartureState::API_ERROR:
+                                    new_state = SystemState::API_ERROR;
+                                    break;
+                            }
+                            break;
+                    }
+
+                    self->setState(new_state);
                     break;
+                }
+
+                case SystemEventType::INPUT_EVENT: {
+                    if (system_event.input_event == SystemInputEvent::TOGGLE_DIRECTION) {
+                        self->selected_direction_++;
+                        if (self->selected_direction_ > kMaxDepartureDirections) {
+                            self->selected_direction_ = 1;
+                        }
+
+                        ESP_LOGI(
+                            TAG,
+                            "Direction -> %u",
+                            static_cast<unsigned>(self->selected_direction_)
+                        );
+                        break;
+                    }
+
+                    ESP_LOGI(TAG, "Button requested setup mode");
+
+                    NetworkCommand setup_command {};
+                    setup_command.type = NetworkCommandType::START_SETUP_MODE;
+
+                    if (xQueueSend(
+                        self->network_in_queue_,
+                        &setup_command,
+                        pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
+                    ) == pdTRUE) {
+                        self->setState(SystemState::SETUP);
+                    }
+                    else {
+                        ESP_LOGW(
+                            TAG,
+                            "Failed to queue network command: %d",
+                            static_cast<int>(setup_command.type)
+                        );
+                    }
+                    break;
+                }
+
+                case SystemEventType::SETUP_CONFIG: {
+                    if (!isValidSetupConfig(system_event.setup_config)) {
+                        ESP_LOGW(TAG, "Rejected invalid setup config");
+                        break;
+                    }
+
+                    DeviceSettings updated_settings = self->settings_;
+                    applySetupConfig(updated_settings, system_event.setup_config);
+
+                    if (!saveDeviceSettings(updated_settings)) {
+                        ESP_LOGW(TAG, "Failed to save setup config");
+                        self->setState(SystemState::NETWORK_ERROR);
+                        break;
+                    }
+
+                    self->settings_ = updated_settings;
+                    self->selected_direction_ = self->settings_.startup_direction;
+
+                    NetworkCommand normal_command {};
+                    normal_command.type = NetworkCommandType::START_NORMAL_MODE;
+                    normal_command.settings = self->settings_;
+
+                    if (xQueueSend(
+                        self->network_in_queue_,
+                        &normal_command,
+                        pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
+                    ) != pdTRUE) {
+                        ESP_LOGW(
+                            TAG,
+                            "Failed to queue network command: %d",
+                            static_cast<int>(normal_command.type)
+                        );
+                        self->setState(SystemState::NETWORK_ERROR);
+                    }
+                    break;
+                }
             }
         }
 

@@ -17,10 +17,6 @@ struct SiteSettings {
     TransportMode transport_filter = TransportMode::UNKNOWN;
 };
 
-struct DirectionSettings {
-    uint8_t startup_direction = 1;
-};
-
 struct SetupSettings {
     bool needs_setup = true;
 };
@@ -29,14 +25,14 @@ struct DeviceSettings {
     uint8_t version = kDeviceSettingsVersion;
     WifiSettings wifi {};
     SiteSettings site {};
-    DirectionSettings direction {};
+    uint8_t startup_direction = 1;
     SetupSettings setup {};
 };
 
 struct SetupConfig {
     WifiSettings wifi {};
     SiteSettings site {};
-    DirectionSettings direction {};
+    uint8_t startup_direction = 1;
 };
 
 inline bool isValidSetupConfig(const SetupConfig& config) {
@@ -48,8 +44,8 @@ inline bool isValidSetupConfig(const SetupConfig& config) {
         return false;
     }
 
-    if (config.direction.startup_direction != 1 &&
-        config.direction.startup_direction != 2) {
+    if (config.startup_direction != 1 &&
+        config.startup_direction != 2) {
         return false;
     }
 
@@ -59,7 +55,7 @@ inline bool isValidSetupConfig(const SetupConfig& config) {
 inline void applySetupConfig(DeviceSettings& settings, const SetupConfig& config) {
     settings.wifi = config.wifi;
     settings.site = config.site;
-    settings.direction.startup_direction = config.direction.startup_direction;
+    settings.startup_direction = config.startup_direction;
     settings.setup.needs_setup = false;
 }
 

@@ -42,16 +42,13 @@ class NetworkManager {
     httpd_handle_t setup_server_ = nullptr;
 
     esp_http_client_config_t http_cfg_ {};
-    void resetRuntimeState();
     void setNetworkPhase(NetworkPhase new_phase);
     bool handleWifiError(esp_err_t err, const char* action);
-    void handleWifiLinkEvent(WifiLinkEvent event);
-    void handleStartNormalMode(const DeviceSettings& settings);
-    void handleStartSetupMode();
+    void handleWifiEvent(WifiLinkEvent event);
     void sendNetworkState();
     bool buildApiUrl();
     void startSetupMode();
-    void startNormalMode();
+    void startNormalMode(const DeviceSettings& settings);
 public:
     NetworkManager(Queues* queues);
     void init();

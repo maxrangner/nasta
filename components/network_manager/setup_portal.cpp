@@ -181,7 +181,7 @@ static esp_err_t handleSetupSaveRequest(httpd_req_t* req) {
     if (direction_end == direction_buffer || *direction_end != '\0') {
         return sendSetupErrorResponse(req);
     }
-    config.direction.startup_direction = static_cast<uint8_t>(direction);
+    config.startup_direction = static_cast<uint8_t>(direction);
     config.site.transport_filter = toTransportMode(transport_buffer);
 
     if (!isValidSetupConfig(config)) {

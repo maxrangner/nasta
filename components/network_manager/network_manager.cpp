@@ -14,14 +14,6 @@ NetworkManager::NetworkManager(Queues* queues)
       wifi_interface_(queues->network_in_queue) {
 }
 
-void NetworkManager::resetRuntimeState() {
-    reconnection_attempts_ = 0;
-    prev_reconnect_attempt_ = 0;
-    prev_api_fetch_ = 0;
-    last_successful_fetch_ = 0;
-    api_failures_ = 0;
-}
-
 void NetworkManager::setNetworkPhase(NetworkPhase new_phase) {
     if (network_state_.phase == new_phase) {
         return;
@@ -40,6 +32,62 @@ bool NetworkManager::handleWifiError(esp_err_t err, const char* action) {
     setNetworkPhase(NetworkPhase::ERROR);
     sendNetworkState();
     return false;
+}
+
+void NetworkManager::handleWifiEvent(WifiLinkEvent event) {
+    switch (event) {
+        case WifiLinkEvent::LINK_CONNECTED_STA:
+            reconnection_attempts_ = 0;
+            prev_reconnect_attempt_ = 0;
+            prev_api_fetch_ = 0;
+            api_failures_ = 0;
+            setNetworkPhase(NetworkPhase::READY);
+            if (network_state_.departure_state == DepartureState::API_ERROR) {
+                network_state_.departure_state = DepartureState::NONE;
+                network_state_.stale_data = false;
+            }
+            sendNetworkState();
+            break;
+
+        case WifiLinkEvent::LINK_AP_ACTIVE:
+            if (mode_ != NetworkMode::SETUP) {
+                ESP_LOGI(TAG, "Ignoring AP start outside setup mode");
+                break;
+            }
+
+            reconnection_attempts_ = 0;
+            prev_reconnect_attempt_ = 0;
+            prev_api_fetch_ = 0;
+            api_failures_ = 0;
+            setNetworkPhase(NetworkPhase::SETUP);
+            if (!startSetupPortal(&setup_server_, system_in_queue_)) {
+                setNetworkPhase(NetworkPhase::ERROR);
+                sendNetworkState();
+            }
+            break;
+
+        case WifiLinkEvent::LINK_DISCONNECTED:
+            if (mode_ == NetworkMode::SETUP) {
+                ESP_LOGI(TAG, "Ignoring disconnect in setup mode");
+                break;
+            }
+
+            if (mode_ != NetworkMode::NORMAL) {
+                setNetworkPhase(NetworkPhase::ERROR);
+                sendNetworkState();
+                break;
+            }
+
+            if (network_state_.departure_state == DepartureState::READY) {
+                network_state_.stale_data = true;
+            }
+            prev_api_fetch_ = 0;
+            api_failures_ = 0;
+            prev_reconnect_attempt_ = xTaskGetTickCount();
+            setNetworkPhase(NetworkPhase::CONNECTING);
+            sendNetworkState();
+            break;
+    }
 }
 
 void NetworkManager::sendNetworkState() {
@@ -84,23 +132,25 @@ bool NetworkManager::buildApiUrl() {
     return written > 0 && written < sizeof(api_url_);
 }
 
-void NetworkManager::startSetupMode() {
-    setNetworkPhase(NetworkPhase::SETUP);
-    network_state_.departure_state = DepartureState::NONE;
-    network_state_.stale_data = false;
-    network_state_.departures = {};
-    sendNetworkState();
+void NetworkManager::startNormalMode(const DeviceSettings& settings) {
+    NetworkMode previous_mode = mode_;
 
-    if (!handleWifiError(wifi_interface_.setApMode(), "set AP mode")) {
-        return;
-    }
-    if (!handleWifiError(wifi_interface_.setApConfig(), "set AP config")) {
-        return;
-    }
-    handleWifiError(wifi_interface_.start(), "start AP mode");
-}
+    mode_ = NetworkMode::NORMAL;
+    applied_settings_ = settings;
+    reconnection_attempts_ = 0;
+    prev_reconnect_attempt_ = 0;
+    prev_api_fetch_ = 0;
+    last_successful_fetch_ = 0;
+    api_failures_ = 0;
 
-void NetworkManager::startNormalMode() {
+    stopSetupPortal(&setup_server_);
+
+    if (previous_mode != NetworkMode::NONE) {
+        if (!handleWifiError(wifi_interface_.stop(), "stop Wi-Fi")) {
+            return;
+        }
+    }
+
     if (!buildApiUrl()) {
         ESP_LOGW(TAG, "Failed to build API URL from settings");
         setNetworkPhase(NetworkPhase::ERROR);
@@ -142,25 +192,7 @@ void NetworkManager::startNormalMode() {
     handleWifiError(wifi_interface_.connect(), "connect STA");
 }
 
-void NetworkManager::handleStartNormalMode(const DeviceSettings& settings) {
-    NetworkMode previous_mode = mode_;
-
-    mode_ = NetworkMode::NORMAL;
-    applied_settings_ = settings;
-    resetRuntimeState();
-
-    stopSetupPortal(&setup_server_);
-
-    if (previous_mode != NetworkMode::NONE) {
-        if (!handleWifiError(wifi_interface_.stop(), "stop Wi-Fi")) {
-            return;
-        }
-    }
-
-    startNormalMode();
-}
-
-void NetworkManager::handleStartSetupMode() {
+void NetworkManager::startSetupMode() {
     if (mode_ == NetworkMode::SETUP &&
         network_state_.phase == NetworkPhase::SETUP) {
         return;
@@ -169,7 +201,11 @@ void NetworkManager::handleStartSetupMode() {
     NetworkMode previous_mode = mode_;
 
     mode_ = NetworkMode::SETUP;
-    resetRuntimeState();
+    reconnection_attempts_ = 0;
+    prev_reconnect_attempt_ = 0;
+    prev_api_fetch_ = 0;
+    last_successful_fetch_ = 0;
+    api_failures_ = 0;
     stopSetupPortal(&setup_server_);
 
     if (previous_mode != NetworkMode::NONE) {
@@ -178,7 +214,19 @@ void NetworkManager::handleStartSetupMode() {
         }
     }
 
-    startSetupMode();
+    setNetworkPhase(NetworkPhase::SETUP);
+    network_state_.departure_state = DepartureState::NONE;
+    network_state_.stale_data = false;
+    network_state_.departures = {};
+    sendNetworkState();
+
+    if (!handleWifiError(wifi_interface_.setApMode(), "set AP mode")) {
+        return;
+    }
+    if (!handleWifiError(wifi_interface_.setApConfig(), "set AP config")) {
+        return;
+    }
+    handleWifiError(wifi_interface_.start(), "start AP mode");
 }
 
 void NetworkManager::init() {
@@ -212,17 +260,17 @@ void NetworkManager::networkTask(void* pvParameters) {
             switch (command.type) {
                 case NetworkCommandType::WIFI_LINK_EVENT:
                     ESP_LOGI(TAG, "Command - WIFI_LINK_EVENT: %d", static_cast<int>(command.wifi_link_event));
-                    self->handleWifiLinkEvent(command.wifi_link_event);
+                    self->handleWifiEvent(command.wifi_link_event);
                     break;
 
                 case NetworkCommandType::START_SETUP_MODE:
                     ESP_LOGI(TAG, "Command - START_SETUP_MODE");
-                    self->handleStartSetupMode();
+                    self->startSetupMode();
                     break;
 
                 case NetworkCommandType::START_NORMAL_MODE:
                     ESP_LOGI(TAG, "Command - START_NORMAL_MODE");
-                    self->handleStartNormalMode(command.settings);
+                    self->startNormalMode(command.settings);
                     break;
             }
         }
@@ -234,7 +282,7 @@ void NetworkManager::networkTask(void* pvParameters) {
             (now - self->prev_reconnect_attempt_) >= pdMS_TO_TICKS(self->kReconnectTiming_)) {
             if (self->reconnection_attempts_ >= self->kMaxRetries_) {
                 ESP_LOGW(TAG, "Too many Wi-Fi reconnect failures, switching to setup mode");
-                self->handleStartSetupMode();
+                self->startSetupMode();
             }
             else {
                 self->reconnection_attempts_++;
@@ -295,62 +343,6 @@ void NetworkManager::networkTask(void* pvParameters) {
                 }
             }
         }
-    }
-}
-
-void NetworkManager::handleWifiLinkEvent(WifiLinkEvent event) {
-    switch (event) {
-        case WifiLinkEvent::LINK_CONNECTED_STA:
-            reconnection_attempts_ = 0;
-            prev_reconnect_attempt_ = 0;
-            prev_api_fetch_ = 0;
-            api_failures_ = 0;
-            setNetworkPhase(NetworkPhase::READY);
-            if (network_state_.departure_state == DepartureState::API_ERROR) {
-                network_state_.departure_state = DepartureState::NONE;
-                network_state_.stale_data = false;
-            }
-            sendNetworkState();
-            break;
-
-        case WifiLinkEvent::LINK_AP_ACTIVE:
-            if (mode_ != NetworkMode::SETUP) {
-                ESP_LOGI(TAG, "Ignoring AP start outside setup mode");
-                break;
-            }
-
-            reconnection_attempts_ = 0;
-            prev_reconnect_attempt_ = 0;
-            prev_api_fetch_ = 0;
-            api_failures_ = 0;
-            setNetworkPhase(NetworkPhase::SETUP);
-            if (!startSetupPortal(&setup_server_, system_in_queue_)) {
-                setNetworkPhase(NetworkPhase::ERROR);
-                sendNetworkState();
-            }
-            break;
-
-        case WifiLinkEvent::LINK_DISCONNECTED:
-            if (mode_ == NetworkMode::SETUP) {
-                ESP_LOGI(TAG, "Ignoring disconnect in setup mode");
-                break;
-            }
-
-            if (mode_ != NetworkMode::NORMAL) {
-                setNetworkPhase(NetworkPhase::ERROR);
-                sendNetworkState();
-                break;
-            }
-
-            if (network_state_.departure_state == DepartureState::READY) {
-                network_state_.stale_data = true;
-            }
-            prev_api_fetch_ = 0;
-            api_failures_ = 0;
-            prev_reconnect_attempt_ = xTaskGetTickCount();
-            setNetworkPhase(NetworkPhase::CONNECTING);
-            sendNetworkState();
-            break;
     }
 }
 
