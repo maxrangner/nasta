@@ -1,11 +1,6 @@
 #include "settings.h"
 #include "unity.h"
 
-void setUp(void)
-{
-
-}
-
 TEST_CASE("returns BootMode::SETUP when settings.setup.needs_setup is true", "[settings]")
 {
         DeviceSettings settings {};
@@ -44,7 +39,3 @@ TEST_CASE("returns BootMode::NORMAL when all settings are valid", "[settings]")
         TEST_ASSERT_EQUAL(BootMode::NORMAL, mode);
 }
 
-void tearDown(void) 
-{
-
-}

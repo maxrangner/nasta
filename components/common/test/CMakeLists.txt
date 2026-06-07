@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "utils_test.cpp" "settings_test.cpp"
+    SRCS "test_main.cpp" "utils_test.cpp" "settings_test.cpp" "settings_storage_test.cpp"
     INCLUDE_DIRS "."
-    REQUIRES unity common
+    REQUIRES unity common nvs_flash
 )

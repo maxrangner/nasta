@@ -73,6 +73,10 @@ void SystemManager::init() {
     }
 }
 
+SystemState SystemManager::getState() const {
+    return system_state_;
+}
+
 void SystemManager::handleButtonCallback(button_event_t event, uint8_t gpio_num, void* user_data) {
     (void)gpio_num;
 
