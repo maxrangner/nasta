@@ -100,6 +100,125 @@ void SystemManager::handleButtonCallback(button_event_t event, uint8_t gpio_num,
     (void)xQueueSend(self->system_in_queue_, &system_event, 0);
 }
 
+void SystemManager::handleNetworkStateEvent(const NetworkState& network_state) {
+    network_state_ = network_state;
+
+    switch (network_state_.phase) {
+        case NetworkPhase::CONNECTING:
+            setState(SystemState::CONNECTING);
+            return;
+
+        case NetworkPhase::SETUP:
+            setState(SystemState::SETUP);
+            return;
+
+        case NetworkPhase::ERROR:
+            setState(SystemState::NETWORK_ERROR);
+            return;
+
+        case NetworkPhase::READY:
+            break;
+    }
+
+    if (network_state_.departure_state == DepartureState::NONE) {
+        setState(SystemState::CONNECTED);
+        return;
+    }
+
+    if (network_state_.departure_state == DepartureState::API_ERROR) {
+        setState(SystemState::API_ERROR);
+        return;
+    }
+
+    if (totalDepartureCount(network_state_.departures) == 0) {
+        setState(SystemState::NO_DEPARTURES);
+        return;
+    }
+
+    setState(SystemState::DEPARTURES);
+}
+
+void SystemManager::handleSetupConfigEvent(const SetupConfig& setup_config) {
+    if (!isValidSetupConfig(setup_config)) {
+        ESP_LOGW(TAG, "Rejected invalid setup config");
+        return;
+    }
+
+    DeviceSettings updated_settings = settings_;
+    applySetupConfig(updated_settings, setup_config);
+
+    if (!saveDeviceSettings(updated_settings)) {
+        ESP_LOGW(TAG, "Failed to save setup config");
+        setState(SystemState::NETWORK_ERROR);
+        return;
+    }
+
+    settings_ = updated_settings;
+    selected_direction_ = settings_.startup_direction;
+
+    NetworkCommand normal_command {};
+    normal_command.type = NetworkCommandType::START_NORMAL_MODE;
+    normal_command.settings = settings_;
+
+    if (xQueueSend(
+        network_in_queue_,
+        &normal_command,
+        pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
+    ) != pdTRUE) {
+        ESP_LOGW(
+            TAG,
+            "Failed to queue network command: %d",
+            static_cast<int>(normal_command.type)
+        );
+        setState(SystemState::NETWORK_ERROR);
+    }
+}
+
+void SystemManager::handleSystemEvent(const SystemEvent& system_event) {
+    switch (system_event.type) {
+        case SystemEventType::NETWORK_STATE:
+            handleNetworkStateEvent(system_event.network_state);
+            break;
+
+        case SystemEventType::INPUT_EVENT:
+            switch (system_event.input_event) {
+                case SystemInputEvent::TOGGLE_DIRECTION:
+                    selected_direction_++;
+
+                    if (selected_direction_ > kMaxDepartureDirections) {
+                        selected_direction_ = 1;
+                    }
+
+                    ESP_LOGI(TAG, "Direction -> %u", static_cast<unsigned>(selected_direction_));
+                    break;
+
+                case SystemInputEvent::FORCE_SETUP: {
+                    ESP_LOGI(TAG, "Button requested setup mode");
+
+                    NetworkCommand setup_command {};
+                    setup_command.type = NetworkCommandType::START_SETUP_MODE;
+
+                    if (xQueueSend(
+                        network_in_queue_,
+                        &setup_command,
+                        pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
+                    ) == pdTRUE) {
+                        setState(SystemState::SETUP);
+                    }
+                    else {
+                        ESP_LOGW(TAG, "Failed to queue network command: %d", static_cast<int>(setup_command.type));
+                    }
+                    break;
+                }
+            }
+            break;
+
+        case SystemEventType::SETUP_CONFIG:
+            handleSetupConfigEvent(system_event.setup_config);
+            break;
+    }
+}
+
 void SystemManager::setState(SystemState new_state) {
     if (system_state_ == new_state) {
         return;
@@ -185,124 +304,7 @@ void SystemManager::systemTask(void* pvParameters) {
             &system_event,
             pdMS_TO_TICKS(self->kUpdateInterval_)
         ) == pdTRUE) {
-            switch (system_event.type) {
-                case SystemEventType::NETWORK_STATE: {
-                    SystemState new_state = self->system_state_;
-                    self->network_state_ = system_event.network_state;
-
-                    switch (self->network_state_.phase) {
-                        case NetworkPhase::CONNECTING:
-                            new_state = SystemState::CONNECTING;
-                            break;
-
-                        case NetworkPhase::SETUP:
-                            new_state = SystemState::SETUP;
-                            break;
-
-                        case NetworkPhase::ERROR:
-                            new_state = SystemState::NETWORK_ERROR;
-                            break;
-
-                        case NetworkPhase::READY:
-                            switch (self->network_state_.departure_state) {
-                                case DepartureState::NONE:
-                                    new_state = SystemState::CONNECTED;
-                                    break;
-
-                                case DepartureState::READY:
-                                    if (totalDepartureCount(self->network_state_.departures) == 0) {
-                                        new_state = SystemState::NO_DEPARTURES;
-                                        break;
-                                    }
-
-                                    new_state = SystemState::DEPARTURES;
-                                    break;
-
-                                case DepartureState::API_ERROR:
-                                    new_state = SystemState::API_ERROR;
-                                    break;
-                            }
-                            break;
-                    }
-
-                    self->setState(new_state);
-                    break;
-                }
-
-                case SystemEventType::INPUT_EVENT: {
-                    if (system_event.input_event == SystemInputEvent::TOGGLE_DIRECTION) {
-                        self->selected_direction_++;
-                        if (self->selected_direction_ > kMaxDepartureDirections) {
-                            self->selected_direction_ = 1;
-                        }
-
-                        ESP_LOGI(
-                            TAG,
-                            "Direction -> %u",
-                            static_cast<unsigned>(self->selected_direction_)
-                        );
-                        break;
-                    }
-
-                    ESP_LOGI(TAG, "Button requested setup mode");
-
-                    NetworkCommand setup_command {};
-                    setup_command.type = NetworkCommandType::START_SETUP_MODE;
-
-                    if (xQueueSend(
-                        self->network_in_queue_,
-                        &setup_command,
-                        pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
-                    ) == pdTRUE) {
-                        self->setState(SystemState::SETUP);
-                    }
-                    else {
-                        ESP_LOGW(
-                            TAG,
-                            "Failed to queue network command: %d",
-                            static_cast<int>(setup_command.type)
-                        );
-                    }
-                    break;
-                }
-
-                case SystemEventType::SETUP_CONFIG: {
-                    if (!isValidSetupConfig(system_event.setup_config)) {
-                        ESP_LOGW(TAG, "Rejected invalid setup config");
-                        break;
-                    }
-
-                    DeviceSettings updated_settings = self->settings_;
-                    applySetupConfig(updated_settings, system_event.setup_config);
-
-                    if (!saveDeviceSettings(updated_settings)) {
-                        ESP_LOGW(TAG, "Failed to save setup config");
-                        self->setState(SystemState::NETWORK_ERROR);
-                        break;
-                    }
-
-                    self->settings_ = updated_settings;
-                    self->selected_direction_ = self->settings_.startup_direction;
-
-                    NetworkCommand normal_command {};
-                    normal_command.type = NetworkCommandType::START_NORMAL_MODE;
-                    normal_command.settings = self->settings_;
-
-                    if (xQueueSend(
-                        self->network_in_queue_,
-                        &normal_command,
-                        pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
-                    ) != pdTRUE) {
-                        ESP_LOGW(
-                            TAG,
-                            "Failed to queue network command: %d",
-                            static_cast<int>(normal_command.type)
-                        );
-                        self->setState(SystemState::NETWORK_ERROR);
-                    }
-                    break;
-                }
-            }
+            self->handleSystemEvent(system_event);
         }
 
         self->animation_frame_++;

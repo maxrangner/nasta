@@ -33,6 +33,9 @@ public:
 private:
     static void systemTask(void* pvParameters);
     static void handleButtonCallback(button_event_t event, uint8_t gpio_num, void* user_data);
+    void handleSystemEvent(const SystemEvent& system_event);
+    void handleNetworkStateEvent(const NetworkState& network_state);
+    void handleSetupConfigEvent(const SetupConfig& setup_config);
     void setState(SystemState new_state);
     void renderDisplay();
 };
