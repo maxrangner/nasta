@@ -5,6 +5,16 @@
 static const char *TAG = "system manager";
 static constexpr uint32_t kControlQueueSendTimeoutMs = 10;
 
+static uint8_t totalDepartureCount(const Departures& departures) {
+    uint8_t count = 0;
+
+    for (uint8_t i = 0; i < kMaxDepartureDirections; i++) {
+        count += departures.directions[i].count;
+    }
+
+    return count;
+}
+
 SystemManager::SystemManager(Queues* queues)
     : system_in_queue_(queues->system_in_queue),
       network_in_queue_(queues->network_in_queue) {

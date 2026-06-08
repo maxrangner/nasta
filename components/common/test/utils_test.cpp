@@ -1,17 +1,23 @@
 #include "utils.h"
 #include "unity.h"
 
-TEST_CASE("returns TransportMode::METRO when transport_mode is 'METRO'", "[utils]")
+void test_toTransportMode_returns_metro_for_metro_string(void)
 {
-        const char* transport_mode = "METRO";
-        TransportMode mode = toTransportMode(transport_mode);
-        TEST_ASSERT_EQUAL(TransportMode::METRO, mode);
+    const char* transport_mode = "METRO";
+
+    TransportMode mode = toTransportMode(transport_mode);
+
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(TransportMode::METRO),
+        static_cast<int>(mode)
+    );
 }
 
-TEST_CASE("returns 'METRO' when transport_mode is TransportMode::METRO", "[utils]")
+void test_toTransportModeApiString_returns_metro_for_transport_mode_metro(void)
 {
-        TransportMode transport_mode = TransportMode::METRO;
-        const char* mode = toTransportModeApiString(transport_mode);
-        TEST_ASSERT_EQUAL_STRING("METRO", mode);
-}
+    TransportMode transport_mode = TransportMode::METRO;
 
+    const char* mode = toTransportModeApiString(transport_mode);
+
+    TEST_ASSERT_EQUAL_STRING("METRO", mode);
+}
