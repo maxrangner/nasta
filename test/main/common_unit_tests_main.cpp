@@ -7,6 +7,14 @@ void test_decideBootMode_returns_normal_when_settings_are_valid(void);
 void test_toTransportMode_returns_metro_for_metro_string(void);
 void test_toTransportModeApiString_returns_metro_for_transport_mode_metro(void);
 
+void setUp(void)
+{
+}
+
+void tearDown(void)
+{
+}
+
 int main(void)
 {
     UNITY_BEGIN();

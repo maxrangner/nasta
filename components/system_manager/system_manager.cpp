@@ -74,11 +74,7 @@ void SystemManager::init() {
         command.settings = settings_;
     }
 
-    if (xQueueSend(
-        network_in_queue_,
-        &command,
-        pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
-    ) != pdTRUE) {
+    if (xQueueSend(network_in_queue_, &command, pdMS_TO_TICKS(kControlQueueSendTimeoutMs)) != pdTRUE) {
         ESP_LOGW(TAG, "Failed to queue network command: %d", static_cast<int>(command.type));
     }
 }
