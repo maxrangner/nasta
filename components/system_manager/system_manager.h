@@ -8,6 +8,8 @@
 #include "message_types.h"
 
 class SystemManager {
+    friend struct SystemManagerTestAccess;
+
     static constexpr uint32_t kMainButtonPin_ = 3;
     static constexpr bool kMainButtonHasPullup_ = true;
     static constexpr uint16_t kButtonDebounceMs_ = 50;

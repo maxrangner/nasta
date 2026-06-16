@@ -20,17 +20,16 @@ struct NetworkCommand {
     DeviceSettings settings {};
 };
 
-enum class NetworkPhase : uint8_t {
+enum class NetworkStatus : uint8_t {
     CONNECTING,
     SETUP,
-    READY,
-    ERROR
-};
-
-enum class DepartureState : uint8_t {
-    NONE,
-    READY,
-    API_ERROR
+    SETUP_ERROR,
+    CONNECTED,
+    NO_DEPARTURES,
+    DEPARTURES_FRESH,
+    DEPARTURES_STALE,
+    API_ERROR,
+    NETWORK_ERROR
 };
 
 enum class SystemState {
@@ -61,9 +60,7 @@ struct Departures {
 };
 
 struct NetworkState {
-    NetworkPhase phase = NetworkPhase::CONNECTING;
-    DepartureState departure_state = DepartureState::NONE;
-    bool stale_data = false;
+    NetworkStatus status = NetworkStatus::CONNECTING;
     Departures departures {};
 };
 

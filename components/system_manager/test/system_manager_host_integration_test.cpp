@@ -2,9 +2,7 @@
 
 #include <string.h>
 
-#define private public
 #include "system_manager.h"
-#undef private
 
 struct HostQueue {
     UBaseType_t item_size = 0;
@@ -16,6 +14,15 @@ struct HostQueue {
 static DeviceSettings loaded_settings_stub {};
 static Queues test_queues {};
 static SystemManager* system_manager = nullptr;
+
+struct SystemManagerTestAccess {
+    static void sendNetworkState(SystemManager& system_manager, const NetworkState& network_state) {
+        SystemEvent event {};
+        event.type = SystemEventType::NETWORK_STATE;
+        event.network_state = network_state;
+        system_manager.handleSystemEvent(event);
+    }
+};
 
 static DeviceSettings makeValidSettings() {
     DeviceSettings settings {};
@@ -47,13 +54,6 @@ static void deleteQueues(Queues* queues) {
         vQueueDelete(queues->network_in_queue);
         queues->network_in_queue = nullptr;
     }
-}
-
-static void sendNetworkState(SystemManager& system_manager, const NetworkState& network_state) {
-    SystemEvent event {};
-    event.type = SystemEventType::NETWORK_STATE;
-    event.network_state = network_state;
-    system_manager.handleSystemEvent(event);
 }
 
 void setUp(void)
@@ -221,9 +221,9 @@ void test_system_manager_init_queues_start_normal_mode_when_loaded_settings_are_
 void test_system_manager_enters_connecting_state_when_network_reports_connecting(void)
 {
     NetworkState network_state {};
-    network_state.phase = NetworkPhase::CONNECTING;
+    network_state.status = NetworkStatus::CONNECTING;
 
-    sendNetworkState(*system_manager, network_state);
+    SystemManagerTestAccess::sendNetworkState(*system_manager, network_state);
 
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(SystemState::CONNECTING),
@@ -234,10 +234,9 @@ void test_system_manager_enters_connecting_state_when_network_reports_connecting
 void test_system_manager_enters_connected_state_when_network_is_ready_with_no_departures(void)
 {
     NetworkState network_state {};
-    network_state.phase = NetworkPhase::READY;
-    network_state.departure_state = DepartureState::NONE;
+    network_state.status = NetworkStatus::CONNECTED;
 
-    sendNetworkState(*system_manager, network_state);
+    SystemManagerTestAccess::sendNetworkState(*system_manager, network_state);
 
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(SystemState::CONNECTED),
@@ -248,10 +247,9 @@ void test_system_manager_enters_connected_state_when_network_is_ready_with_no_de
 void test_system_manager_enters_api_error_state_when_network_reports_api_error(void)
 {
     NetworkState network_state {};
-    network_state.phase = NetworkPhase::READY;
-    network_state.departure_state = DepartureState::API_ERROR;
+    network_state.status = NetworkStatus::API_ERROR;
 
-    sendNetworkState(*system_manager, network_state);
+    SystemManagerTestAccess::sendNetworkState(*system_manager, network_state);
 
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(SystemState::API_ERROR),
@@ -262,10 +260,9 @@ void test_system_manager_enters_api_error_state_when_network_reports_api_error(v
 void test_system_manager_enters_no_departures_state_when_network_is_ready_with_empty_departures(void)
 {
     NetworkState network_state {};
-    network_state.phase = NetworkPhase::READY;
-    network_state.departure_state = DepartureState::READY;
+    network_state.status = NetworkStatus::NO_DEPARTURES;
 
-    sendNetworkState(*system_manager, network_state);
+    SystemManagerTestAccess::sendNetworkState(*system_manager, network_state);
 
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(SystemState::NO_DEPARTURES),
@@ -276,8 +273,7 @@ void test_system_manager_enters_no_departures_state_when_network_is_ready_with_e
 void test_system_manager_enters_departures_state_when_network_has_departures(void)
 {
     NetworkState network_state {};
-    network_state.phase = NetworkPhase::READY;
-    network_state.departure_state = DepartureState::READY;
+    network_state.status = NetworkStatus::DEPARTURES_FRESH;
     network_state.departures.directions[0].count = 1;
     memcpy(
         network_state.departures.directions[0].departures[0].display,
@@ -285,7 +281,7 @@ void test_system_manager_enters_departures_state_when_network_has_departures(voi
         sizeof("5 min")
     );
 
-    sendNetworkState(*system_manager, network_state);
+    SystemManagerTestAccess::sendNetworkState(*system_manager, network_state);
 
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(SystemState::DEPARTURES),

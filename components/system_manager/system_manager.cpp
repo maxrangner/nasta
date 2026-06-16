@@ -5,16 +5,6 @@
 static const char *TAG = "system manager";
 static constexpr uint32_t kControlQueueSendTimeoutMs = 10;
 
-static uint8_t totalDepartureCount(const Departures& departures) {
-    uint8_t count = 0;
-
-    for (uint8_t i = 0; i < kMaxDepartureDirections; i++) {
-        count += departures.directions[i].count;
-    }
-
-    return count;
-}
-
 SystemManager::SystemManager(Queues* queues)
     : system_in_queue_(queues->system_in_queue),
       network_in_queue_(queues->network_in_queue) {
@@ -113,39 +103,37 @@ void SystemManager::handleButtonCallback(button_event_t event, uint8_t gpio_num,
 void SystemManager::handleNetworkStateEvent(const NetworkState& network_state) {
     network_state_ = network_state;
 
-    switch (network_state_.phase) {
-        case NetworkPhase::CONNECTING:
+    switch (network_state_.status) {
+        case NetworkStatus::CONNECTING:
             setState(SystemState::CONNECTING);
             return;
 
-        case NetworkPhase::SETUP:
+        case NetworkStatus::SETUP:
             setState(SystemState::SETUP);
             return;
 
-        case NetworkPhase::ERROR:
+        case NetworkStatus::SETUP_ERROR:
+        case NetworkStatus::NETWORK_ERROR:
             setState(SystemState::NETWORK_ERROR);
             return;
 
-        case NetworkPhase::READY:
-            break;
-    }
+        case NetworkStatus::CONNECTED:
+            setState(SystemState::CONNECTED);
+            return;
 
-    if (network_state_.departure_state == DepartureState::NONE) {
-        setState(SystemState::CONNECTED);
-        return;
-    }
+        case NetworkStatus::NO_DEPARTURES:
+            setState(SystemState::NO_DEPARTURES);
+            return;
 
-    if (network_state_.departure_state == DepartureState::API_ERROR) {
-        setState(SystemState::API_ERROR);
-        return;
-    }
+        case NetworkStatus::DEPARTURES_FRESH:
+        case NetworkStatus::DEPARTURES_STALE:
+            setState(SystemState::DEPARTURES);
+            return;
 
-    if (totalDepartureCount(network_state_.departures) == 0) {
-        setState(SystemState::NO_DEPARTURES);
-        return;
+        case NetworkStatus::API_ERROR:
+            setState(SystemState::API_ERROR);
+            return;
     }
-
-    setState(SystemState::DEPARTURES);
 }
 
 void SystemManager::handleSetupConfigEvent(const SetupConfig& setup_config) {
@@ -237,8 +225,7 @@ void SystemManager::setState(SystemState new_state) {
 void SystemManager::renderDisplay() {
     DirectionDepartures active_departures {};
 
-    if ((system_state_ == SystemState::DEPARTURES ||
-         system_state_ == SystemState::NO_DEPARTURES) &&
+    if (system_state_ == SystemState::DEPARTURES &&
         selected_direction_ >= 1 &&
         selected_direction_ <= kMaxDepartureDirections) {
         active_departures = network_state_.departures.directions[selected_direction_ - 1];
@@ -266,7 +253,7 @@ void SystemManager::renderDisplay() {
 
         case SystemState::DEPARTURES:
             matrix_.setColor(
-                network_state_.stale_data ? kPixelBrightness_ : 0,
+                network_state_.status == NetworkStatus::DEPARTURES_STALE ? kPixelBrightness_ : 0,
                 kPixelBrightness_,
                 0
             );

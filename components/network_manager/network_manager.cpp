@@ -8,28 +8,38 @@
 
 static const char *TAG = "network manager";
 
+static bool hasAnyDepartures(const Departures& departures) {
+    for (uint8_t i = 0; i < kMaxDepartureDirections; i++) {
+        if (departures.directions[i].count > 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 NetworkManager::NetworkManager(Queues* queues)
     : system_in_queue_(queues->system_in_queue),
       network_in_queue_(queues->network_in_queue),
       wifi_interface_(queues->network_in_queue) {
 }
 
-void NetworkManager::setNetworkPhase(NetworkPhase new_phase) {
-    if (network_state_.phase == new_phase) {
+void NetworkManager::setNetworkStatus(NetworkStatus new_status) {
+    if (network_state_.status == new_status) {
         return;
     }
 
-    network_state_.phase = new_phase;
-    ESP_LOGI(TAG, "Phase -> %d", static_cast<int>(network_state_.phase));
+    network_state_.status = new_status;
+    ESP_LOGI(TAG, "Status -> %d", static_cast<int>(network_state_.status));
 }
 
-bool NetworkManager::handleWifiError(esp_err_t err, const char* action) {
+bool NetworkManager::handleWifiError(esp_err_t err, const char* action, NetworkStatus error_status) {
     if (err == ESP_OK) {
         return true;
     }
 
     ESP_LOGW(TAG, "%s failed: %s", action, esp_err_to_name(err));
-    setNetworkPhase(NetworkPhase::ERROR);
+    setNetworkStatus(error_status);
     sendNetworkState();
     return false;
 }
@@ -37,20 +47,32 @@ bool NetworkManager::handleWifiError(esp_err_t err, const char* action) {
 void NetworkManager::handleWifiEvent(WifiLinkEvent event) {
     switch (event) {
         case WifiLinkEvent::LINK_CONNECTED_STA:
+            if (network_state_.status == NetworkStatus::SETUP ||
+                network_state_.status == NetworkStatus::SETUP_ERROR) {
+                ESP_LOGI(TAG, "Ignoring STA connect in setup mode");
+                break;
+            }
+
             reconnection_attempts_ = 0;
             prev_reconnect_attempt_ = 0;
             prev_api_fetch_ = 0;
             api_failures_ = 0;
-            setNetworkPhase(NetworkPhase::READY);
-            if (network_state_.departure_state == DepartureState::API_ERROR) {
-                network_state_.departure_state = DepartureState::NONE;
-                network_state_.stale_data = false;
+
+            if (last_successful_fetch_ == 0) {
+                setNetworkStatus(NetworkStatus::CONNECTED);
             }
+            else if (hasAnyDepartures(network_state_.departures)) {
+                setNetworkStatus(NetworkStatus::DEPARTURES_STALE);
+            }
+            else {
+                setNetworkStatus(NetworkStatus::NO_DEPARTURES);
+            }
+
             sendNetworkState();
             break;
 
         case WifiLinkEvent::LINK_AP_ACTIVE:
-            if (mode_ != NetworkMode::SETUP) {
+            if (network_state_.status != NetworkStatus::SETUP) {
                 ESP_LOGI(TAG, "Ignoring AP start outside setup mode");
                 break;
             }
@@ -59,32 +81,23 @@ void NetworkManager::handleWifiEvent(WifiLinkEvent event) {
             prev_reconnect_attempt_ = 0;
             prev_api_fetch_ = 0;
             api_failures_ = 0;
-            setNetworkPhase(NetworkPhase::SETUP);
             if (!startSetupPortal(&setup_server_, system_in_queue_)) {
-                setNetworkPhase(NetworkPhase::ERROR);
+                setNetworkStatus(NetworkStatus::SETUP_ERROR);
                 sendNetworkState();
             }
             break;
 
         case WifiLinkEvent::LINK_DISCONNECTED:
-            if (mode_ == NetworkMode::SETUP) {
+            if (network_state_.status == NetworkStatus::SETUP ||
+                network_state_.status == NetworkStatus::SETUP_ERROR) {
                 ESP_LOGI(TAG, "Ignoring disconnect in setup mode");
                 break;
             }
 
-            if (mode_ != NetworkMode::NORMAL) {
-                setNetworkPhase(NetworkPhase::ERROR);
-                sendNetworkState();
-                break;
-            }
-
-            if (network_state_.departure_state == DepartureState::READY) {
-                network_state_.stale_data = true;
-            }
             prev_api_fetch_ = 0;
             api_failures_ = 0;
             prev_reconnect_attempt_ = xTaskGetTickCount();
-            setNetworkPhase(NetworkPhase::CONNECTING);
+            setNetworkStatus(NetworkStatus::CONNECTING);
             sendNetworkState();
             break;
     }
@@ -133,9 +146,6 @@ bool NetworkManager::buildApiUrl() {
 }
 
 void NetworkManager::startNormalMode(const DeviceSettings& settings) {
-    NetworkMode previous_mode = mode_;
-
-    mode_ = NetworkMode::NORMAL;
     applied_settings_ = settings;
     reconnection_attempts_ = 0;
     prev_reconnect_attempt_ = 0;
@@ -145,15 +155,13 @@ void NetworkManager::startNormalMode(const DeviceSettings& settings) {
 
     stopSetupPortal(&setup_server_);
 
-    if (previous_mode != NetworkMode::NONE) {
-        if (!handleWifiError(wifi_interface_.stop(), "stop Wi-Fi")) {
-            return;
-        }
+    if (!handleWifiError(wifi_interface_.stop(), "stop Wi-Fi", NetworkStatus::NETWORK_ERROR)) {
+        return;
     }
 
     if (!buildApiUrl()) {
         ESP_LOGW(TAG, "Failed to build API URL from settings");
-        setNetworkPhase(NetworkPhase::ERROR);
+        setNetworkStatus(NetworkStatus::NETWORK_ERROR);
         sendNetworkState();
         return;
     }
@@ -162,7 +170,7 @@ void NetworkManager::startNormalMode(const DeviceSettings& settings) {
         api_buffer = (char*)malloc(kMaxApiBufferSize_);
         if (api_buffer == nullptr) {
             ESP_LOGW(TAG, "kMaxApiBufferSize_ malloc failed");
-            setNetworkPhase(NetworkPhase::ERROR);
+            setNetworkStatus(NetworkStatus::NETWORK_ERROR);
             sendNetworkState();
             return;
         }
@@ -174,33 +182,32 @@ void NetworkManager::startNormalMode(const DeviceSettings& settings) {
     http_cfg_.timeout_ms = 5000;
     http_cfg_.crt_bundle_attach = esp_crt_bundle_attach;
 
-    if (!handleWifiError(wifi_interface_.setStaMode(), "set STA mode")) {
+    network_state_.departures = {};
+    setNetworkStatus(NetworkStatus::CONNECTING);
+    sendNetworkState();
+
+    if (!handleWifiError(wifi_interface_.setStaMode(), "set STA mode", NetworkStatus::NETWORK_ERROR)) {
         return;
     }
-    if (!handleWifiError(wifi_interface_.setStaConfig(applied_settings_.wifi), "set STA config")) {
+    if (!handleWifiError(
+        wifi_interface_.setStaConfig(applied_settings_.wifi),
+        "set STA config",
+        NetworkStatus::NETWORK_ERROR
+    )) {
         return;
     }
-    if (!handleWifiError(wifi_interface_.start(), "start STA mode")) {
+    if (!handleWifiError(wifi_interface_.start(), "start STA mode", NetworkStatus::NETWORK_ERROR)) {
         return;
     }
 
-    setNetworkPhase(NetworkPhase::CONNECTING);
-    network_state_.departure_state = DepartureState::NONE;
-    network_state_.stale_data = false;
-    network_state_.departures = {};
-    sendNetworkState();
-    handleWifiError(wifi_interface_.connect(), "connect STA");
+    handleWifiError(wifi_interface_.connect(), "connect STA", NetworkStatus::NETWORK_ERROR);
 }
 
 void NetworkManager::startSetupMode() {
-    if (mode_ == NetworkMode::SETUP &&
-        network_state_.phase == NetworkPhase::SETUP) {
+    if (network_state_.status == NetworkStatus::SETUP) {
         return;
     }
 
-    NetworkMode previous_mode = mode_;
-
-    mode_ = NetworkMode::SETUP;
     reconnection_attempts_ = 0;
     prev_reconnect_attempt_ = 0;
     prev_api_fetch_ = 0;
@@ -208,25 +215,21 @@ void NetworkManager::startSetupMode() {
     api_failures_ = 0;
     stopSetupPortal(&setup_server_);
 
-    if (previous_mode != NetworkMode::NONE) {
-        if (!handleWifiError(wifi_interface_.stop(), "stop Wi-Fi")) {
-            return;
-        }
+    if (!handleWifiError(wifi_interface_.stop(), "stop Wi-Fi", NetworkStatus::SETUP_ERROR)) {
+        return;
     }
 
-    setNetworkPhase(NetworkPhase::SETUP);
-    network_state_.departure_state = DepartureState::NONE;
-    network_state_.stale_data = false;
     network_state_.departures = {};
+    setNetworkStatus(NetworkStatus::SETUP);
     sendNetworkState();
 
-    if (!handleWifiError(wifi_interface_.setApMode(), "set AP mode")) {
+    if (!handleWifiError(wifi_interface_.setApMode(), "set AP mode", NetworkStatus::SETUP_ERROR)) {
         return;
     }
-    if (!handleWifiError(wifi_interface_.setApConfig(), "set AP config")) {
+    if (!handleWifiError(wifi_interface_.setApConfig(), "set AP config", NetworkStatus::SETUP_ERROR)) {
         return;
     }
-    handleWifiError(wifi_interface_.start(), "start AP mode");
+    handleWifiError(wifi_interface_.start(), "start AP mode", NetworkStatus::SETUP_ERROR);
 }
 
 void NetworkManager::init() {
@@ -234,7 +237,7 @@ void NetworkManager::init() {
         return;
     }
 
-    if (!handleWifiError(wifi_interface_.init(), "initialize Wi-Fi")) {
+    if (!handleWifiError(wifi_interface_.init(), "initialize Wi-Fi", NetworkStatus::NETWORK_ERROR)) {
         return;
     }
 
@@ -251,8 +254,7 @@ void NetworkManager::init() {
 
 void NetworkManager::processReconnect(TickType_t now) {
     bool reconnect_due =
-        mode_ == NetworkMode::NORMAL &&
-        network_state_.phase == NetworkPhase::CONNECTING &&
+        network_state_.status == NetworkStatus::CONNECTING &&
         prev_reconnect_attempt_ != 0 &&
         (now - prev_reconnect_attempt_) >= pdMS_TO_TICKS(kReconnectTiming_);
 
@@ -268,20 +270,17 @@ void NetworkManager::processReconnect(TickType_t now) {
 
     reconnection_attempts_++;
     prev_reconnect_attempt_ = now;
-    sendNetworkState();
 
-    if (!handleWifiError(wifi_interface_.setStaMode(), "set STA mode")) {
+    if (!handleWifiError(wifi_interface_.setStaMode(), "set STA mode", NetworkStatus::NETWORK_ERROR)) {
         return;
     }
 
-    handleWifiError(wifi_interface_.connect(), "connect STA");
+    handleWifiError(wifi_interface_.connect(), "connect STA", NetworkStatus::NETWORK_ERROR);
 }
 
 void NetworkManager::updateStaleData(TickType_t now) {
     bool stale_timeout_reached =
-        network_state_.phase == NetworkPhase::READY &&
-        network_state_.departure_state == DepartureState::READY &&
-        !network_state_.stale_data &&
+        network_state_.status == NetworkStatus::DEPARTURES_FRESH &&
         last_successful_fetch_ != 0 &&
         (now - last_successful_fetch_) >= pdMS_TO_TICKS(kStaleDataTiming_);
 
@@ -289,13 +288,17 @@ void NetworkManager::updateStaleData(TickType_t now) {
         return;
     }
 
-    network_state_.stale_data = true;
+    setNetworkStatus(NetworkStatus::DEPARTURES_STALE);
     sendNetworkState();
 }
 
 void NetworkManager::fetchDepartures(TickType_t now) {
     bool fetch_due =
-        network_state_.phase == NetworkPhase::READY &&
+        (network_state_.status == NetworkStatus::CONNECTED ||
+         network_state_.status == NetworkStatus::NO_DEPARTURES ||
+         network_state_.status == NetworkStatus::DEPARTURES_FRESH ||
+         network_state_.status == NetworkStatus::DEPARTURES_STALE ||
+         network_state_.status == NetworkStatus::API_ERROR) &&
         (prev_api_fetch_ == 0 ||
         (now - prev_api_fetch_) >= pdMS_TO_TICKS(kApiTiming_));
 
@@ -308,23 +311,26 @@ void NetworkManager::fetchDepartures(TickType_t now) {
     Departures latest_departures {};
     bool fetch_ok = apiFetch() &&
         jsonParser(api_buffer, &latest_departures);
-    bool has_cached_data =
-        network_state_.departure_state == DepartureState::READY;
+    bool has_cached_result = last_successful_fetch_ != 0;
 
     if (fetch_ok) {
         api_failures_ = 0;
         last_successful_fetch_ = now;
-        setNetworkPhase(NetworkPhase::READY);
-        network_state_.departure_state = DepartureState::READY;
-        network_state_.stale_data = false;
         network_state_.departures = latest_departures;
+        if (hasAnyDepartures(latest_departures)) {
+            setNetworkStatus(NetworkStatus::DEPARTURES_FRESH);
+        }
+        else {
+            setNetworkStatus(NetworkStatus::NO_DEPARTURES);
+        }
         sendNetworkState();
         return;
     }
 
-    if (has_cached_data) {
-        if (!network_state_.stale_data) {
-            network_state_.stale_data = true;
+    if (has_cached_result) {
+        if (hasAnyDepartures(network_state_.departures) &&
+            network_state_.status != NetworkStatus::DEPARTURES_STALE) {
+            setNetworkStatus(NetworkStatus::DEPARTURES_STALE);
             sendNetworkState();
         }
         return;
@@ -334,8 +340,7 @@ void NetworkManager::fetchDepartures(TickType_t now) {
         api_failures_++;
 
         if (api_failures_ >= kMaxApiFailures_) {
-            network_state_.departure_state = DepartureState::API_ERROR;
-            network_state_.stale_data = false;
+            setNetworkStatus(NetworkStatus::API_ERROR);
             sendNetworkState();
         }
     }

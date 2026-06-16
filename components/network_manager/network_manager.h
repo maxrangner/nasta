@@ -10,12 +10,6 @@
 #include "settings.h"
 
 class NetworkManager {
-    enum class NetworkMode {
-        NONE,
-        NORMAL,
-        SETUP
-    };
-    NetworkMode mode_ = NetworkMode::NONE;
     static constexpr BaseType_t kTaskCore_ = 1;
     TaskHandle_t task_network_manager_ = nullptr;
     QueueHandle_t system_in_queue_ = nullptr;
@@ -42,8 +36,8 @@ class NetworkManager {
     httpd_handle_t setup_server_ = nullptr;
 
     esp_http_client_config_t http_cfg_ {};
-    void setNetworkPhase(NetworkPhase new_phase);
-    bool handleWifiError(esp_err_t err, const char* action);
+    void setNetworkStatus(NetworkStatus new_status);
+    bool handleWifiError(esp_err_t err, const char* action, NetworkStatus error_status);
     void handleWifiEvent(WifiLinkEvent event);
     void sendNetworkState();
     bool buildApiUrl();
