@@ -2,18 +2,24 @@
 
 #include "led_matrix.h"
 
-static constexpr uint8_t kDirectionIndicatorFrames_ = 5;
+static constexpr uint8_t kBootAnimationFrames_ = 8;
+static constexpr uint8_t kDirectionAnimationFrames_ = 5;
 static constexpr uint8_t kPixelBrightness_ = 1;
 
 static LedMatrix matrix_ {};
-static DisplayData current_display_data {};
+static DisplayState current_display_state {};
+static DisplayAnimation active_animation_ = DisplayAnimation::NONE;
+static DisplayAnimation looping_animation_ = DisplayAnimation::NONE;
+static uint32_t display_frame_ = 0;
 static uint32_t animation_frame_ = 0;
-static uint32_t last_direction_change_counter_ = 0;
-static uint8_t direction_indicator_frames_left_ = 0;
 static bool is_initialized_ = false;
 
 static void renderDisplay();
-static void showDirectionIndicator();
+static void renderState();
+static void renderAnimation(DisplayAnimation animation, uint32_t frame);
+static bool isOneShotAnimation(DisplayAnimation animation);
+static uint32_t oneShotFrameCount(DisplayAnimation animation);
+static void finishAnimationFrame();
 
 void displayInit() {
     if (is_initialized_) {
@@ -24,17 +30,39 @@ void displayInit() {
     is_initialized_ = true;
 }
 
-void displaySetData(const DisplayData& display_data) {
+void displaySetState(const DisplayState& display_state) {
     if (!is_initialized_) {
         return;
     }
 
-    current_display_data = display_data;
+    current_display_state = display_state;
+}
 
-    if (current_display_data.direction_change_counter != last_direction_change_counter_) {
-        last_direction_change_counter_ = current_display_data.direction_change_counter;
-        direction_indicator_frames_left_ = kDirectionIndicatorFrames_;
+void displayPlayAnimation(DisplayAnimation animation) {
+    if (!is_initialized_) {
+        return;
     }
+
+    if (animation == DisplayAnimation::NONE) {
+        active_animation_ = DisplayAnimation::NONE;
+        looping_animation_ = DisplayAnimation::NONE;
+        animation_frame_ = 0;
+        return;
+    }
+
+    if (animation == DisplayAnimation::CONNECTING) {
+        looping_animation_ = animation;
+
+        if (active_animation_ == DisplayAnimation::NONE ||
+            active_animation_ == DisplayAnimation::CONNECTING) {
+            active_animation_ = animation;
+            animation_frame_ = 0;
+        }
+        return;
+    }
+
+    active_animation_ = animation;
+    animation_frame_ = 0;
 }
 
 void displayUpdate() {
@@ -42,79 +70,143 @@ void displayUpdate() {
         return;
     }
 
-    animation_frame_++;
     renderDisplay();
+    display_frame_++;
+    finishAnimationFrame();
 }
 
 static void renderDisplay() {
-    if (direction_indicator_frames_left_ > 0) {
-        direction_indicator_frames_left_--;
-        showDirectionIndicator();
+    if (active_animation_ != DisplayAnimation::NONE) {
+        renderAnimation(active_animation_, animation_frame_);
         return;
     }
 
-    switch (current_display_data.screen) {
-        case DisplayScreen::BOOT:
-            matrix_.bootAnimation(animation_frame_);
+    renderState();
+}
+
+static void renderState() {
+    switch (current_display_state.system_state) {
+        case SystemState::BOOT:
+            matrix_.clear();
             break;
 
-        case DisplayScreen::CONNECTING:
+        case SystemState::CONNECTING:
             matrix_.setColor(0, 0, kPixelBrightness_);
-            matrix_.connectionAnimation(animation_frame_);
+            matrix_.connectionAnimation(display_frame_);
             break;
 
-        case DisplayScreen::CONNECTED:
+        case SystemState::CONNECTED:
             matrix_.setColor(0, kPixelBrightness_, 0);
             matrix_.displayIcon(MatrixIcon::OK);
             break;
 
-        case DisplayScreen::SETUP:
+        case SystemState::SETUP:
             matrix_.setColor(0, kPixelBrightness_, kPixelBrightness_);
             matrix_.displayIcon(MatrixIcon::HEART);
             break;
 
-        case DisplayScreen::DEPARTURES:
-            matrix_.setColor(
-                current_display_data.show_stale_data ? kPixelBrightness_ : 0,
-                kPixelBrightness_,
-                0
-            );
+        case SystemState::DEPARTURES:
+            matrix_.setColor(0, kPixelBrightness_, 0);
 
-            if (!current_display_data.has_departure_for_active_direction) {
+            if (!current_display_state.has_departure_for_active_direction) {
                 matrix_.displayIcon(MatrixIcon::QUESTION);
                 break;
             }
 
             matrix_.displayDeparture(
-                current_display_data.departure_text,
-                animation_frame_
+                current_display_state.departure_text,
+                display_frame_
             );
             break;
 
-        case DisplayScreen::NO_DEPARTURES:
+        case SystemState::NO_DEPARTURES:
             matrix_.setColor(kPixelBrightness_, kPixelBrightness_, 0);
             matrix_.displayIcon(MatrixIcon::QUESTION);
             break;
 
-        case DisplayScreen::API_ERROR:
+        case SystemState::API_ERROR:
             matrix_.setColor(kPixelBrightness_, 0, 0);
             matrix_.displayIcon(MatrixIcon::QUESTION);
             break;
 
-        case DisplayScreen::NETWORK_ERROR:
+        case SystemState::NETWORK_ERROR:
             matrix_.setColor(kPixelBrightness_, 0, 0);
             matrix_.displayIcon(MatrixIcon::CROSS);
             break;
     }
 }
 
-static void showDirectionIndicator() {
-    matrix_.setColor(0, kPixelBrightness_, 0);
+static void renderAnimation(DisplayAnimation animation, uint32_t frame) {
+    switch (animation) {
+        case DisplayAnimation::NONE:
+            renderState();
+            break;
 
-    if (current_display_data.active_direction <= 1) {
-        matrix_.displayIcon(MatrixIcon::ARROW_LEFT);
+        case DisplayAnimation::BOOT:
+            matrix_.bootAnimation(frame);
+            break;
+
+        case DisplayAnimation::CONNECTING:
+            matrix_.setColor(0, 0, kPixelBrightness_);
+            matrix_.connectionAnimation(frame);
+            break;
+
+        case DisplayAnimation::DIRECTION_LEFT:
+            matrix_.setColor(0, kPixelBrightness_, 0);
+            matrix_.displayIcon(MatrixIcon::ARROW_LEFT);
+            break;
+
+        case DisplayAnimation::DIRECTION_RIGHT:
+            matrix_.setColor(0, kPixelBrightness_, 0);
+            matrix_.displayIcon(MatrixIcon::ARROW_RIGHT);
+            break;
+    }
+}
+
+static bool isOneShotAnimation(DisplayAnimation animation) {
+    return animation == DisplayAnimation::BOOT ||
+        animation == DisplayAnimation::DIRECTION_LEFT ||
+        animation == DisplayAnimation::DIRECTION_RIGHT;
+}
+
+static uint32_t oneShotFrameCount(DisplayAnimation animation) {
+    switch (animation) {
+        case DisplayAnimation::BOOT:
+            return kBootAnimationFrames_;
+
+        case DisplayAnimation::DIRECTION_LEFT:
+        case DisplayAnimation::DIRECTION_RIGHT:
+            return kDirectionAnimationFrames_;
+
+        case DisplayAnimation::NONE:
+        case DisplayAnimation::CONNECTING:
+            return 0;
+    }
+
+    return 0;
+}
+
+static void finishAnimationFrame() {
+    if (active_animation_ == DisplayAnimation::NONE) {
         return;
     }
 
-    matrix_.displayIcon(MatrixIcon::ARROW_RIGHT);
+    animation_frame_++;
+
+    if (!isOneShotAnimation(active_animation_)) {
+        return;
+    }
+
+    if (animation_frame_ < oneShotFrameCount(active_animation_)) {
+        return;
+    }
+
+    if (looping_animation_ != DisplayAnimation::NONE) {
+        active_animation_ = looping_animation_;
+        animation_frame_ = 0;
+        return;
+    }
+
+    active_animation_ = DisplayAnimation::NONE;
+    animation_frame_ = 0;
 }
