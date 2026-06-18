@@ -83,15 +83,14 @@ void SystemManager::handleButtonCallback(button_event_t event, uint8_t gpio_num,
     }
 
     SystemEvent system_event {};
-    system_event.type = SystemEventType::INPUT_EVENT;
 
     switch (event) {
         case BTN_SHORT_PRESS:
-            system_event.input_event = SystemInputEvent::TOGGLE_DIRECTION;
+            system_event.type = SystemEventType::TOGGLE_DIRECTION;
             break;
 
         case BTN_LONG_PRESS:
-            system_event.input_event = SystemInputEvent::FORCE_SETUP;
+            system_event.type = SystemEventType::FORCE_SETUP;
             break;
 
         default:
@@ -126,8 +125,7 @@ void SystemManager::handleNetworkStateEvent(const NetworkState& network_state) {
             setState(SystemState::NO_DEPARTURES);
             return;
 
-        case NetworkStatus::DEPARTURES_FRESH:
-        case NetworkStatus::DEPARTURES_STALE:
+        case NetworkStatus::DEPARTURES:
             setState(SystemState::DEPARTURES);
             return;
 
@@ -179,39 +177,35 @@ void SystemManager::handleSystemEvent(const SystemEvent& system_event) {
             handleNetworkStateEvent(system_event.network_state);
             break;
 
-        case SystemEventType::INPUT_EVENT:
-            switch (system_event.input_event) {
-                case SystemInputEvent::TOGGLE_DIRECTION:
-                    selected_direction_++;
+        case SystemEventType::TOGGLE_DIRECTION:
+            selected_direction_++;
 
-                    if (selected_direction_ > kMaxDepartureDirections) {
-                        selected_direction_ = 1;
-                    }
+            if (selected_direction_ > kMaxDepartureDirections) {
+                selected_direction_ = 1;
+            }
 
-                    direction_change_counter_++;
-                    ESP_LOGI(TAG, "Direction -> %u", static_cast<unsigned>(selected_direction_));
-                    break;
+            direction_change_counter_++;
+            ESP_LOGI(TAG, "Direction -> %u", static_cast<unsigned>(selected_direction_));
+            break;
 
-                case SystemInputEvent::FORCE_SETUP: {
-                    ESP_LOGI(TAG, "Button requested setup mode");
+        case SystemEventType::FORCE_SETUP: {
+            ESP_LOGI(TAG, "Button requested setup mode");
 
-                    NetworkCommand setup_command {};
-                    setup_command.type = NetworkCommandType::START_SETUP_MODE;
+            NetworkCommand setup_command {};
+            setup_command.type = NetworkCommandType::START_SETUP_MODE;
 
-                    if (xQueueSend(
-                        network_in_queue_,
-                        &setup_command,
-                        pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
-                    ) == pdTRUE) {
-                        setState(SystemState::SETUP);
-                    }
-                    else {
-                        ESP_LOGW(TAG, "Failed to queue network command: %d", static_cast<int>(setup_command.type));
-                    }
-                    break;
-                }
+            if (xQueueSend(
+                network_in_queue_,
+                &setup_command,
+                pdMS_TO_TICKS(kControlQueueSendTimeoutMs)
+            ) == pdTRUE) {
+                setState(SystemState::SETUP);
+            }
+            else {
+                ESP_LOGW(TAG, "Failed to queue network command: %d", static_cast<int>(setup_command.type));
             }
             break;
+        }
 
         case SystemEventType::SETUP_CONFIG:
             handleSetupConfigEvent(system_event.setup_config);
@@ -229,7 +223,6 @@ void SystemManager::setState(SystemState new_state) {
 DisplayData SystemManager::makeDisplayData() const {
     DisplayData display_data {};
     display_data.active_direction = selected_direction_;
-    display_data.show_stale_data = network_state_.status == NetworkStatus::DEPARTURES_STALE;
     display_data.direction_change_counter = direction_change_counter_;
 
     switch (system_state_) {
