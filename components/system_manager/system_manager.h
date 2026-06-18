@@ -23,6 +23,7 @@ class SystemManager {
     NetworkState network_state_ {};
     SystemState system_state_ = SystemState::BOOT;
     uint8_t selected_direction_ = 1;
+    friend struct SystemManagerHostTestAccess;
 public:
     SystemManager(Queues* queues);
     void init();

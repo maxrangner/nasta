@@ -289,11 +289,7 @@ void SystemManager::systemTask(void* pvParameters) {
     while(true) {
         SystemEvent system_event {};
 
-        while (xQueueReceive(
-            self->system_in_queue_,
-            &system_event,
-            0
-        ) == pdTRUE) {
+        while (xQueueReceive(self->system_in_queue_, &system_event, 0) == pdTRUE) {
             self->handleSystemEvent(system_event);
         }
 
