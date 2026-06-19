@@ -3,7 +3,8 @@
 #include <stdint.h>
 #include "types.h"
 
-static constexpr uint8_t kDeviceSettingsVersion = 1;
+static constexpr uint8_t kDeviceSettingsVersion = 3;
+static constexpr uint8_t kDefaultGradientMinutes = 5;
 static constexpr uint8_t kMaxWifiSsidLength = 32;
 static constexpr uint8_t kMaxWifiPasswordLength = 64;
 
@@ -27,12 +28,16 @@ struct DeviceSettings {
     SiteSettings site {};
     uint8_t startup_direction = 1;
     SetupSettings setup {};
+    uint8_t walk_time_minutes = 0;
+    uint8_t gradient_minutes = kDefaultGradientMinutes;
 };
 
 struct SetupConfig {
     WifiSettings wifi {};
     SiteSettings site {};
     uint8_t startup_direction = 1;
+    uint8_t walk_time_minutes = 0;
+    uint8_t gradient_minutes = kDefaultGradientMinutes;
 };
 
 inline bool isValidSetupConfig(const SetupConfig& config) {
@@ -57,6 +62,8 @@ inline void applySetupConfig(DeviceSettings& settings, const SetupConfig& config
     settings.site = config.site;
     settings.startup_direction = config.startup_direction;
     settings.setup.needs_setup = false;
+    settings.walk_time_minutes = config.walk_time_minutes;
+    settings.gradient_minutes = config.gradient_minutes;
 }
 
 enum class BootMode : uint8_t {

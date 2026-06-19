@@ -215,6 +215,8 @@ void SystemManager::setSystemState(SystemState new_state) {
 DisplayState SystemManager::buildDisplayState() const {
     DisplayState display_state {};
     display_state.system_state = system_state_;
+    display_state.walk_time_minutes = settings_.walk_time_minutes;
+    display_state.gradient_minutes = settings_.gradient_minutes;
 
     if (selected_direction_ < 1 ||
         selected_direction_ > kMaxDepartureDirections) {

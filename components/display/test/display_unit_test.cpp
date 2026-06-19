@@ -27,6 +27,9 @@ struct RenderCall {
     uint32_t frame = 0;
     uint8_t minutes = 0;
     char text[6] = {};
+    uint8_t red = 0;
+    uint8_t green = 0;
+    uint8_t blue = 0;
 };
 
 static RenderCall last_render {};
@@ -66,16 +69,22 @@ void LedMatrix::showSetup() {
     last_render.kind = RenderKind::SETUP;
 }
 
-void LedMatrix::showDepartureMinutes(uint8_t minutes) {
+void LedMatrix::showDepartureMinutes(uint8_t minutes, uint8_t r, uint8_t g, uint8_t b) {
     clearLastRender();
     last_render.kind = RenderKind::DEPARTURE_MINUTES;
     last_render.minutes = minutes;
+    last_render.red = r;
+    last_render.green = g;
+    last_render.blue = b;
 }
 
-void LedMatrix::showDepartureClock(const char* time_str, uint32_t frame) {
+void LedMatrix::showDepartureClock(const char* time_str, uint32_t frame, uint8_t r, uint8_t g, uint8_t b) {
     clearLastRender();
     last_render.kind = RenderKind::DEPARTURE_CLOCK;
     last_render.frame = frame;
+    last_render.red = r;
+    last_render.green = g;
+    last_render.blue = b;
 
     if (time_str != nullptr) {
         memcpy(last_render.text, time_str, 5);
@@ -185,6 +194,8 @@ void test_display_shows_minutes_for_numeric_departure_text(void)
 {
     DisplayState state {};
     state.system_state = SystemState::DEPARTURES;
+    state.walk_time_minutes = 5;
+    state.gradient_minutes = 5;
     memcpy(state.departure_text, "5 min", sizeof("5 min"));
     displaySetState(state);
 
@@ -196,6 +207,9 @@ void test_display_shows_minutes_for_numeric_departure_text(void)
         static_cast<int>(last_render.kind)
     );
     TEST_ASSERT_EQUAL_UINT8(5, last_render.minutes);
+    TEST_ASSERT_EQUAL_UINT8(6, last_render.red);
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.green);
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
 }
 
 void test_display_shows_minutes_for_now_departure_text(void)
@@ -203,6 +217,8 @@ void test_display_shows_minutes_for_now_departure_text(void)
     DisplayState state {};
     state.system_state = SystemState::DEPARTURES;
     memcpy(state.departure_text, "Nu", sizeof("Nu"));
+    state.walk_time_minutes = 5;
+    state.gradient_minutes = 5;
     displaySetState(state);
 
     clearLastRender();
@@ -213,6 +229,72 @@ void test_display_shows_minutes_for_now_departure_text(void)
         static_cast<int>(last_render.kind)
     );
     TEST_ASSERT_EQUAL_UINT8(0, last_render.minutes);
+    TEST_ASSERT_EQUAL_UINT8(6, last_render.red);
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.green);
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
+}
+
+void test_display_keeps_far_departure_green_after_walk_time_offset(void)
+{
+    DisplayState state {};
+    state.system_state = SystemState::DEPARTURES;
+    state.walk_time_minutes = 5;
+    state.gradient_minutes = 5;
+    memcpy(state.departure_text, "12 min", sizeof("12 min"));
+    displaySetState(state);
+
+    clearLastRender();
+    displayUpdate();
+
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(RenderKind::DEPARTURE_MINUTES),
+        static_cast<int>(last_render.kind)
+    );
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.red);
+    TEST_ASSERT_EQUAL_UINT8(6, last_render.green);
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
+}
+
+void test_display_turns_red_at_walk_time_plus_buffer(void)
+{
+    DisplayState state {};
+    state.system_state = SystemState::DEPARTURES;
+    state.walk_time_minutes = 5;
+    state.gradient_minutes = 5;
+    memcpy(state.departure_text, "7 min", sizeof("7 min"));
+    displaySetState(state);
+
+    clearLastRender();
+    displayUpdate();
+
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(RenderKind::DEPARTURE_MINUTES),
+        static_cast<int>(last_render.kind)
+    );
+    TEST_ASSERT_EQUAL_UINT8(6, last_render.red);
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.green);
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
+}
+
+void test_display_ramps_between_green_threshold_and_red_cutoff(void)
+{
+    DisplayState state {};
+    state.system_state = SystemState::DEPARTURES;
+    state.walk_time_minutes = 5;
+    state.gradient_minutes = 5;
+    memcpy(state.departure_text, "10 min", sizeof("10 min"));
+    displaySetState(state);
+
+    clearLastRender();
+    displayUpdate();
+
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(RenderKind::DEPARTURE_MINUTES),
+        static_cast<int>(last_render.kind)
+    );
+    TEST_ASSERT_EQUAL_UINT8(2, last_render.red);
+    TEST_ASSERT_EQUAL_UINT8(4, last_render.green);
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
 }
 
 void test_display_shows_clock_for_clock_departure_text(void)

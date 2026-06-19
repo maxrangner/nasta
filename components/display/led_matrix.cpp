@@ -11,7 +11,7 @@ void LedMatrix::init() {
         .strip_gpio_num = kLedPin_,
         .max_leds = kLedCount_,
         .led_model = LED_MODEL_WS2812,
-        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_RGB,
         .flags = { .invert_out = false },
     };
     led_strip_rmt_config_t rmt_config = {
@@ -70,13 +70,13 @@ void LedMatrix::showSetup() {
     drawGraphic(kHeart);
 }
 
-void LedMatrix::showDepartureMinutes(uint8_t minutes) {
-    setColor(0, kBrightness_, 0);
+void LedMatrix::showDepartureMinutes(uint8_t minutes, uint8_t r, uint8_t g, uint8_t b) {
+    setColor(r, g, b);
     displayNumber(minutes);
 }
 
-void LedMatrix::showDepartureClock(const char* time_str, uint32_t frame) {
-    setColor(0, kBrightness_, 0);
+void LedMatrix::showDepartureClock(const char* time_str, uint32_t frame, uint8_t r, uint8_t g, uint8_t b) {
+    setColor(r, g, b);
 
     if (time_str == nullptr) {
         drawGraphic(kQuestion);

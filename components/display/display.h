@@ -13,6 +13,8 @@ enum class DisplayAnimation : uint8_t {
 struct DisplayState {
     SystemState system_state = SystemState::BOOT;
     char departure_text[sizeof(Departure {}.display)] = {};
+    uint8_t walk_time_minutes = 0;
+    uint8_t gradient_minutes = kDefaultGradientMinutes;
 };
 
 void displayInit();

@@ -14,8 +14,8 @@ public:
     void showConnecting(uint32_t frame);
     void showConnected();
     void showSetup();
-    void showDepartureMinutes(uint8_t minutes);
-    void showDepartureClock(const char* time_str, uint32_t frame);
+    void showDepartureMinutes(uint8_t minutes, uint8_t r, uint8_t g, uint8_t b);
+    void showDepartureClock(const char* time_str, uint32_t frame, uint8_t r, uint8_t g, uint8_t b);
     void showDepartureUnknown();
     void showNoDepartures();
     void showApiError();

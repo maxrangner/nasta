@@ -58,3 +58,20 @@ void test_decideBootMode_returns_normal_when_settings_are_valid(void)
         static_cast<int>(mode)
     );
 }
+
+void test_applySetupConfig_copies_walk_time_minutes(void)
+{
+    DeviceSettings settings {};
+    SetupConfig config {};
+    config.wifi.ssid[0] = 'A';
+    config.site.site_id = 1;
+    config.startup_direction = 2;
+    config.walk_time_minutes = 7;
+    config.gradient_minutes = 9;
+
+    applySetupConfig(settings, config);
+
+    TEST_ASSERT_EQUAL_UINT8(7, settings.walk_time_minutes);
+    TEST_ASSERT_EQUAL_UINT8(9, settings.gradient_minutes);
+    TEST_ASSERT_FALSE(settings.setup.needs_setup);
+}
