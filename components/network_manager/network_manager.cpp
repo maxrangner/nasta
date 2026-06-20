@@ -556,7 +556,7 @@ bool NetworkManager::jsonParser(const char* buffer, Departures* departures_out) 
         new_departure.id = id_json->valueint;
         direction_departures.departures[direction_departures.count] = new_departure;
 
-        ESP_LOGI(TAG, "Parsed departure - %d. %s %s", direction, destination_json->valuestring, display_json->valuestring);
+        ESP_LOGI(TAG, "Parsed departure (dir %d):        %d. %s %s", new_departure.direction_code, new_departure.id, new_departure.destination, new_departure.display);
         direction_departures.count++;
     }
     *departures_out = new_departures;

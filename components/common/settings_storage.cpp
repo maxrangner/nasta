@@ -7,33 +7,6 @@ static const char* TAG = "settings storage";
 static constexpr const char* kSettingsNamespace = "device";
 static constexpr const char* kSettingsKey = "settings";
 
-struct DeviceSettingsV1 {
-    uint8_t version = 1;
-    WifiSettings wifi {};
-    SiteSettings site {};
-    uint8_t startup_direction = 1;
-    SetupSettings setup {};
-};
-
-struct DeviceSettingsV2 {
-    uint8_t version = 2;
-    WifiSettings wifi {};
-    SiteSettings site {};
-    uint8_t startup_direction = 1;
-    SetupSettings setup {};
-    uint8_t walk_time_minutes = 0;
-};
-
-struct DeviceSettingsV3 {
-    uint8_t version = 3;
-    WifiSettings wifi {};
-    SiteSettings site {};
-    uint8_t startup_direction = 1;
-    SetupSettings setup {};
-    uint8_t walk_time_minutes = 0;
-    uint8_t gradient_minutes = kDefaultGradientMinutes;
-};
-
 bool loadDeviceSettings(DeviceSettings* settings) {
     if (settings == nullptr) {
         return false;
@@ -68,10 +41,7 @@ bool loadDeviceSettings(DeviceSettings* settings) {
 
     DeviceSettings loaded_settings {};
 
-    if (size != sizeof(DeviceSettings) &&
-        size != sizeof(DeviceSettingsV1) &&
-        size != sizeof(DeviceSettingsV2) &&
-        size != sizeof(DeviceSettingsV3)) {
+    if (size != sizeof(DeviceSettings)) {
         nvs_close(handle);
         ESP_LOGW(TAG, "Saved settings size mismatch: %u", static_cast<unsigned>(size));
         return false;
@@ -87,28 +57,6 @@ bool loadDeviceSettings(DeviceSettings* settings) {
     }
 
     if (loaded_settings.version != kDeviceSettingsVersion) {
-        if (size == sizeof(DeviceSettingsV1) && loaded_settings.version == 1) {
-            *settings = loaded_settings;
-            settings->version = kDeviceSettingsVersion;
-            settings->walk_time_minutes = 0;
-            settings->gradient_minutes = kDefaultGradientMinutes;
-            return true;
-        }
-
-        if (size == sizeof(DeviceSettingsV2) && loaded_settings.version == 2) {
-            *settings = loaded_settings;
-            settings->version = kDeviceSettingsVersion;
-            settings->gradient_minutes = kDefaultGradientMinutes;
-            return true;
-        }
-
-        if (size == sizeof(DeviceSettingsV3) && loaded_settings.version == 3) {
-            *settings = loaded_settings;
-            settings->version = kDeviceSettingsVersion;
-            settings->brightness = kDefaultDisplayBrightness;
-            return true;
-        }
-
         ESP_LOGW(TAG, "Saved settings version mismatch: %u", loaded_settings.version);
         return false;
     }

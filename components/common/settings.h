@@ -3,8 +3,7 @@
 #include <stdint.h>
 #include "types.h"
 
-static constexpr uint8_t kDeviceSettingsVersion = 4;
-static constexpr uint8_t kDefaultGradientMinutes = 5;
+static constexpr uint8_t kDeviceSettingsVersion = 5;
 static constexpr uint8_t kMaxWifiSsidLength = 32;
 static constexpr uint8_t kMaxWifiPasswordLength = 64;
 
@@ -38,7 +37,6 @@ struct DeviceSettings {
     uint8_t startup_direction = 1;
     SetupSettings setup {};
     uint8_t walk_time_minutes = 0;
-    uint8_t gradient_minutes = kDefaultGradientMinutes;
     DisplayBrightness brightness = kDefaultDisplayBrightness;
 };
 
@@ -47,7 +45,6 @@ struct SetupConfig {
     SiteSettings site {};
     uint8_t startup_direction = 1;
     uint8_t walk_time_minutes = 0;
-    uint8_t gradient_minutes = kDefaultGradientMinutes;
     DisplayBrightness brightness = kDefaultDisplayBrightness;
 };
 
@@ -89,7 +86,6 @@ inline void applySetupConfig(DeviceSettings& settings, const SetupConfig& config
     settings.startup_direction = config.startup_direction;
     settings.setup.needs_setup = false;
     settings.walk_time_minutes = config.walk_time_minutes;
-    settings.gradient_minutes = config.gradient_minutes;
     settings.brightness = config.brightness;
 }
 

@@ -67,13 +67,11 @@ void test_applySetupConfig_copies_walk_time_minutes(void)
     config.site.site_id = 1;
     config.startup_direction = 2;
     config.walk_time_minutes = 7;
-    config.gradient_minutes = 9;
     config.brightness = DisplayBrightness::LOW;
 
     applySetupConfig(settings, config);
 
     TEST_ASSERT_EQUAL_UINT8(7, settings.walk_time_minutes);
-    TEST_ASSERT_EQUAL_UINT8(9, settings.gradient_minutes);
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(DisplayBrightness::LOW),
         static_cast<int>(settings.brightness)

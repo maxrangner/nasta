@@ -25,7 +25,6 @@ static constexpr size_t kMaxSiteIdLength = 10;
 static constexpr size_t kMaxTransportValueLength = 15;
 static constexpr size_t kMaxDirectionValueLength = 3;
 static constexpr size_t kMaxWalkTimeValueLength = 3;
-static constexpr size_t kMaxGradientValueLength = 3;
 static constexpr size_t kMaxBrightnessValueLength = 4;
 
 static constexpr size_t kMaxSetupRequestLength =
@@ -41,8 +40,6 @@ static constexpr size_t kMaxSetupRequestLength =
     kMaxDirectionValueLength +
     sizeof("&walk_time=") - 1 +
     kMaxWalkTimeValueLength +
-    sizeof("&gradient=") - 1 +
-    kMaxGradientValueLength +
     sizeof("&brightness=") - 1 +
     kMaxBrightnessValueLength +
     1;
@@ -531,18 +528,11 @@ static esp_err_t sendSetupPage(httpd_req_t* req) {
     const char* transport_value = portalTransportValue(s_setup_settings.site.transport_filter);
     const char* brightness_value = portalBrightnessValue(s_setup_settings.brightness);
     char walk_time_value[4] = {};
-    char gradient_value[4] = {};
     snprintf(
         walk_time_value,
         sizeof(walk_time_value),
         "%u",
         static_cast<unsigned>(s_setup_settings.walk_time_minutes)
-    );
-    snprintf(
-        gradient_value,
-        sizeof(gradient_value),
-        "%u",
-        static_cast<unsigned>(s_setup_settings.gradient_minutes)
     );
 
     err = httpd_resp_sendstr_chunk(
@@ -718,25 +708,6 @@ static esp_err_t sendSetupPage(httpd_req_t* req) {
         req,
         R"html(">
             <span class="hint">Used to calculate when a departure is no longer realistically reachable.</span>
-          </div>
-
-          <div class="field">
-            <label for="gradient">Gradient (minutes)</label>
-            <input id="gradient" name="gradient" type="number" min="0" max="255" inputmode="numeric" required value=")html"
-    );
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    err = sendEscapedHtmlAttribute(req, gradient_value);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    err = httpd_resp_sendstr_chunk(
-        req,
-        R"html(">
-            <span class="hint">How many minutes the departure should fade from green down to red before the cutoff.</span>
           </div>
 
           <div class="field">
@@ -919,14 +890,12 @@ static esp_err_t handleSetupSaveRequest(httpd_req_t* req) {
     char direction_buffer[4] = {};
     char transport_buffer[16] = {};
     char walk_time_buffer[4] = {};
-    char gradient_buffer[4] = {};
     char brightness_buffer[8] = {};
 
     if (httpd_query_key_value(body, "ssid", encoded_ssid, sizeof(encoded_ssid)) != ESP_OK ||
         httpd_query_key_value(body, "site_id", site_id_buffer, sizeof(site_id_buffer)) != ESP_OK ||
         httpd_query_key_value(body, "direction", direction_buffer, sizeof(direction_buffer)) != ESP_OK ||
         httpd_query_key_value(body, "walk_time", walk_time_buffer, sizeof(walk_time_buffer)) != ESP_OK ||
-        httpd_query_key_value(body, "gradient", gradient_buffer, sizeof(gradient_buffer)) != ESP_OK ||
         httpd_query_key_value(body, "brightness", brightness_buffer, sizeof(brightness_buffer)) != ESP_OK) {
         return sendSetupErrorResponse(req);
     }
@@ -960,15 +929,6 @@ static esp_err_t handleSetupSaveRequest(httpd_req_t* req) {
         return sendSetupErrorResponse(req);
     }
     config.walk_time_minutes = static_cast<uint8_t>(walk_time);
-
-    char* gradient_end = nullptr;
-    unsigned long gradient = strtoul(gradient_buffer, &gradient_end, 10);
-    if (gradient_end == gradient_buffer ||
-        *gradient_end != '\0' ||
-        gradient > 255) {
-        return sendSetupErrorResponse(req);
-    }
-    config.gradient_minutes = static_cast<uint8_t>(gradient);
 
     if (strcmp(brightness_buffer, "low") == 0) {
         config.brightness = DisplayBrightness::LOW;

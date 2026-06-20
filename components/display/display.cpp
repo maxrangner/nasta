@@ -5,20 +5,15 @@
 #include <string.h>
 
 static constexpr uint32_t kDirectionHoldFrames_ = 5;
-static constexpr uint8_t kDepartureBufferMinutes = 2;
-
-struct RgbColor {
-    uint8_t red = 0;
-    uint8_t green = 0;
-    uint8_t blue = 0;
-};
+static constexpr uint8_t kDepartureBufferMinutes = 0;
+static constexpr uint8_t kDepartureOrangeBandMinutes = 2;
 
 static LedMatrix matrix_ {};
 static DisplayState current_state_ {};
 static DisplayAnimation active_animation_ = DisplayAnimation::NONE;
-static uint32_t frame_      = 0;
+static uint32_t frame_ = 0;
 static uint32_t anim_frame_ = 0;
-static bool initialized_    = false;
+static bool initialized_ = false;
 
 static void renderState();
 static void showDeparture();
@@ -26,14 +21,6 @@ static void renderAnimation();
 static void advanceAnimation();
 static uint32_t animationFrameLimit(DisplayAnimation animation);
 static bool looksLikeClockTime(const char* text);
-static RgbColor departureGreen(uint8_t brightness);
-static RgbColor departureRed(uint8_t brightness);
-static RgbColor colorForDepartureMinutes(
-    uint8_t departure_minutes,
-    uint8_t walk_time_minutes,
-    uint8_t gradient_minutes,
-    uint8_t brightness
-);
 
 void displayInit() {
     if (initialized_) return;
@@ -92,20 +79,19 @@ static void showDeparture() {
     }
 
     if (looksLikeClockTime(departure_text)) {
-        RgbColor color = departureGreen(brightness);
         matrix_.showDepartureClock(
             departure_text,
             frame_,
-            color.red,
-            color.green,
-            color.blue
+            0,
+            brightness,
+            0
         );
         return;
     }
 
     while (*departure_text == ' ') departure_text++;
 
-    int departure_minutes = 0;
+    uint8_t departure_minutes = 0;
 
     if (strcmp(departure_text, "Nu") == 0 || strcmp(departure_text, "NU") == 0) {
         departure_minutes = 0;
@@ -123,19 +109,27 @@ static void showDeparture() {
         }
     }
 
-    uint8_t minutes = static_cast<uint8_t>(departure_minutes);
-    RgbColor departure_color = colorForDepartureMinutes(
-        minutes,
-        current_state_.walk_time_minutes,
-        current_state_.gradient_minutes,
-        brightness
-    );
+    uint8_t minutes = departure_minutes;
+    uint8_t red = 0;
+    uint8_t green = 0;
+    bool low_brightness = brightness == kDisplayBrightnessLowValue;
+    uint8_t red_cutoff_minutes = current_state_.walk_time_minutes + kDepartureBufferMinutes;
+    uint8_t orange_cutoff_minutes = red_cutoff_minutes + kDepartureOrangeBandMinutes;
+
+    if (minutes <= red_cutoff_minutes) {
+        red = brightness;
+    } else if (!low_brightness && minutes <= orange_cutoff_minutes) {
+        red = brightness;
+        green = kDisplayBrightnessLowValue;
+    } else {
+        green = brightness;
+    }
 
     matrix_.showDepartureMinutes(
         minutes,
-        departure_color.red,
-        departure_color.green,
-        departure_color.blue
+        red,
+        green,
+        0
     );
 }
 
@@ -178,46 +172,4 @@ static bool looksLikeClockTime(const char* text) {
            text[2] == ':' &&
            isdigit(static_cast<unsigned char>(text[3])) &&
            isdigit(static_cast<unsigned char>(text[4]));
-}
-
-static RgbColor departureGreen(uint8_t brightness) {
-    return { 0, brightness, 0 };
-}
-
-static RgbColor departureRed(uint8_t brightness) {
-    return { brightness, 0, 0 };
-}
-
-static RgbColor colorForDepartureMinutes(
-    uint8_t departure_minutes,
-    uint8_t walk_time_minutes,
-    uint8_t gradient_minutes,
-    uint8_t brightness
-) {
-    RgbColor red = departureRed(brightness);
-    RgbColor green = departureGreen(brightness);
-    int red_cutoff_minutes = static_cast<int>(walk_time_minutes) + kDepartureBufferMinutes;
-    int green_cutoff_minutes = red_cutoff_minutes + static_cast<int>(gradient_minutes);
-
-    if (departure_minutes <= red_cutoff_minutes) {
-        return red;
-    }
-
-    if (gradient_minutes == 0 || departure_minutes >= green_cutoff_minutes) {
-        return green;
-    }
-
-    uint8_t minutes_above_red_cutoff =
-        static_cast<uint8_t>(departure_minutes - red_cutoff_minutes);
-
-    return {
-        static_cast<uint8_t>(
-            red.red -
-            (red.red * minutes_above_red_cutoff) / gradient_minutes
-        ),
-        static_cast<uint8_t>(
-            (green.green * minutes_above_red_cutoff) / gradient_minutes
-        ),
-        0
-    };
 }

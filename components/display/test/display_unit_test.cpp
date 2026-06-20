@@ -206,7 +206,6 @@ void test_display_shows_minutes_for_numeric_departure_text(void)
     DisplayState state {};
     state.system_state = SystemState::DEPARTURES;
     state.walk_time_minutes = 5;
-    state.gradient_minutes = 5;
     memcpy(state.departure_text, "5 min", sizeof("5 min"));
     displaySetState(state);
 
@@ -229,7 +228,6 @@ void test_display_shows_minutes_for_nu_departure_text(void)
     state.system_state = SystemState::DEPARTURES;
     memcpy(state.departure_text, "Nu", sizeof("Nu"));
     state.walk_time_minutes = 5;
-    state.gradient_minutes = 5;
     displaySetState(state);
 
     clearLastRender();
@@ -245,13 +243,12 @@ void test_display_shows_minutes_for_nu_departure_text(void)
     TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
 }
 
-void test_display_keeps_far_departure_green_after_walk_time_offset(void)
+void test_display_turns_green_after_fixed_orange_band(void)
 {
     DisplayState state {};
     state.system_state = SystemState::DEPARTURES;
     state.walk_time_minutes = 5;
-    state.gradient_minutes = 5;
-    memcpy(state.departure_text, "12 min", sizeof("12 min"));
+    memcpy(state.departure_text, "11 min", sizeof("11 min"));
     displaySetState(state);
 
     clearLastRender();
@@ -271,8 +268,7 @@ void test_display_turns_red_at_walk_time_plus_buffer(void)
     DisplayState state {};
     state.system_state = SystemState::DEPARTURES;
     state.walk_time_minutes = 5;
-    state.gradient_minutes = 5;
-    memcpy(state.departure_text, "7 min", sizeof("7 min"));
+    memcpy(state.departure_text, "6 min", sizeof("6 min"));
     displaySetState(state);
 
     clearLastRender();
@@ -287,13 +283,12 @@ void test_display_turns_red_at_walk_time_plus_buffer(void)
     TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
 }
 
-void test_display_stays_near_red_just_above_red_cutoff(void)
+void test_display_uses_orange_just_above_red_cutoff(void)
 {
     DisplayState state {};
     state.system_state = SystemState::DEPARTURES;
     state.walk_time_minutes = 5;
-    state.gradient_minutes = 5;
-    memcpy(state.departure_text, "8 min", sizeof("8 min"));
+    memcpy(state.departure_text, "7 min", sizeof("7 min"));
     displaySetState(state);
 
     clearLastRender();
@@ -303,19 +298,40 @@ void test_display_stays_near_red_just_above_red_cutoff(void)
         static_cast<int>(RenderKind::DEPARTURE_MINUTES),
         static_cast<int>(last_render.kind)
     );
-    TEST_ASSERT_EQUAL_UINT8(4, last_render.red);
+    TEST_ASSERT_EQUAL_UINT8(5, last_render.red);
     TEST_ASSERT_EQUAL_UINT8(1, last_render.green);
     TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
 }
 
-void test_display_uses_low_brightness_setting_for_departure_colors(void)
+void test_display_skips_orange_band_at_low_brightness(void)
 {
     DisplayState state {};
     state.system_state = SystemState::DEPARTURES;
     state.brightness = DisplayBrightness::LOW;
     state.walk_time_minutes = 5;
-    state.gradient_minutes = 5;
-    memcpy(state.departure_text, "12 min", sizeof("12 min"));
+    memcpy(state.departure_text, "10 min", sizeof("10 min"));
+    displaySetState(state);
+
+    clearLastRender();
+    displayUpdate();
+
+    TEST_ASSERT_EQUAL_UINT8(kDisplayBrightnessLowValue, last_render.brightness);
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(RenderKind::DEPARTURE_MINUTES),
+        static_cast<int>(last_render.kind)
+    );
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.red);
+    TEST_ASSERT_EQUAL_UINT8(1, last_render.green);
+    TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
+}
+
+void test_display_uses_low_brightness_setting_for_far_departure_colors(void)
+{
+    DisplayState state {};
+    state.system_state = SystemState::DEPARTURES;
+    state.brightness = DisplayBrightness::LOW;
+    state.walk_time_minutes = 5;
+    memcpy(state.departure_text, "11 min", sizeof("11 min"));
     displaySetState(state);
 
     clearLastRender();
