@@ -116,12 +116,12 @@ void LedMatrix::showNetworkError() {
 }
 
 void LedMatrix::showDirectionLeft() {
-    setColor(0, brightness_, 0);
+    setColor(brightness_, brightness_, brightness_);
     drawGraphic(kArrowLeft);
 }
 
 void LedMatrix::showDirectionRight() {
-    setColor(0, brightness_, 0);
+    setColor(brightness_, brightness_, brightness_);
     drawGraphic(kArrowRight);
 }
 
