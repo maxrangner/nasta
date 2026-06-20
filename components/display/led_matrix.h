@@ -7,7 +7,7 @@
 
 class LedMatrix {
 public:
-    static constexpr uint32_t kBootFrameCount = 8;
+    static constexpr uint32_t kBootFrameCount = 71;
 
     void init();
     void setBrightness(uint8_t brightness);
@@ -15,7 +15,7 @@ public:
     void showBootFrame(uint32_t frame);
     void showConnecting(uint32_t frame);
     void showConnected();
-    void showSetup();
+    void showSetup(uint32_t frame);
     void showDepartureMinutes(uint8_t minutes, uint8_t r, uint8_t g, uint8_t b);
     void showDepartureClock(const char* time_str, uint32_t frame, uint8_t r, uint8_t g, uint8_t b);
     void showDepartureUnknown();

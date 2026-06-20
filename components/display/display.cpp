@@ -61,7 +61,7 @@ static void renderState() {
         case SystemState::BOOT:           matrix_.clear();                                  break;
         case SystemState::CONNECTING:     matrix_.showConnecting(frame_);                   break;
         case SystemState::CONNECTED:      matrix_.showConnected();                          break;
-        case SystemState::SETUP:          matrix_.showSetup();                              break;
+        case SystemState::SETUP:          matrix_.showSetup(frame_);                        break;
         case SystemState::NO_DEPARTURES:  matrix_.showNoDepartures();                       break;
         case SystemState::API_ERROR:      matrix_.showApiError();                           break;
         case SystemState::NETWORK_ERROR:  matrix_.showNetworkError();                       break;

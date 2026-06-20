@@ -74,9 +74,10 @@ void LedMatrix::showConnected() {
     last_render.kind = RenderKind::CONNECTED;
 }
 
-void LedMatrix::showSetup() {
+void LedMatrix::showSetup(uint32_t frame) {
     clearLastRender();
     last_render.kind = RenderKind::SETUP;
+    last_render.frame = frame;
 }
 
 void LedMatrix::showDepartureMinutes(uint8_t minutes, uint8_t r, uint8_t g, uint8_t b) {
@@ -263,7 +264,7 @@ void test_display_turns_green_after_fixed_orange_band(void)
     TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
 }
 
-void test_display_turns_red_at_walk_time_plus_buffer(void)
+void test_display_uses_orange_immediately_above_red_cutoff(void)
 {
     DisplayState state {};
     state.system_state = SystemState::DEPARTURES;
@@ -279,7 +280,7 @@ void test_display_turns_red_at_walk_time_plus_buffer(void)
         static_cast<int>(last_render.kind)
     );
     TEST_ASSERT_EQUAL_UINT8(5, last_render.red);
-    TEST_ASSERT_EQUAL_UINT8(0, last_render.green);
+    TEST_ASSERT_EQUAL_UINT8(1, last_render.green);
     TEST_ASSERT_EQUAL_UINT8(0, last_render.blue);
 }
 

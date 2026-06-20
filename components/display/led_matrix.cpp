@@ -6,9 +6,56 @@
 #include "soc/soc_caps.h"
 #include <string.h>
 
-static uint8_t bootAnimationLevel(uint8_t brightness, uint8_t step) {
-    uint8_t level = static_cast<uint8_t>(step * 2);
-    return level < brightness ? level : brightness;
+namespace {
+
+struct RgbColor {
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+};
+
+static constexpr uint8_t kCenterRings[64] = {
+    6,5,4,3,3,4,5,6,
+    5,4,3,2,2,3,4,5,
+    4,3,2,1,1,2,3,4,
+    3,2,1,0,0,1,2,3,
+    3,2,1,0,0,1,2,3,
+    4,3,2,1,1,2,3,4,
+    5,4,3,2,2,3,4,5,
+    6,5,4,3,3,4,5,6
+};
+
+static constexpr uint8_t kSetupLevels[7] = { 0, 1, 2, 4, 6, 8, 10 };
+
+static uint8_t lerpChannel(uint8_t from, uint8_t to, uint8_t blend) {
+    const uint16_t start = static_cast<uint16_t>(from) * (255 - blend);
+    const uint16_t end = static_cast<uint16_t>(to) * blend;
+    return static_cast<uint8_t>((start + end) / 255);
+}
+
+static RgbColor rainbowColor(uint8_t brightness, uint8_t hue) {
+    const RgbColor kStops[6] = {
+        {brightness, 0, 0},
+        {brightness, brightness, 0},
+        {0, brightness, 0},
+        {0, brightness, brightness},
+        {0, 0, brightness},
+        {brightness, 0, brightness},
+    };
+
+    const uint16_t scaled = static_cast<uint16_t>(hue) * 6;
+    const uint8_t segment = (scaled / 256) % 6;
+    const uint8_t blend = scaled % 256;
+    const RgbColor from = kStops[segment];
+    const RgbColor to = kStops[(segment + 1) % 6];
+
+    return {
+        lerpChannel(from.red, to.red, blend),
+        lerpChannel(from.green, to.green, blend),
+        lerpChannel(from.blue, to.blue, blend),
+    };
+}
+
 }
 
 void LedMatrix::init() {
@@ -49,23 +96,15 @@ void LedMatrix::clear() {
 }
 
 void LedMatrix::showBootFrame(uint32_t frame) {
-    if (led_strip_ == nullptr) return;
-    const uint8_t* graphic = kBootAnimation[frame % kBootFrameCount];
-    uint8_t r = bootAnimationLevel(brightness_, static_cast<uint8_t>(frame % 6));
-    uint8_t g = bootAnimationLevel(brightness_, static_cast<uint8_t>((frame + 2) % 6));
-    uint8_t b = bootAnimationLevel(brightness_, static_cast<uint8_t>((frame + 4) % 6));
-    for (uint16_t i = 0; i < kLedCount_; i++) {
-        if (graphic[i] == 1) {
-            setPixel(i, r, g, b);
-        } else {
-            setPixel(i, 0, 0, 0);
-        }
-    }
-    refreshIfDirty();
+    setColor(brightness_, brightness_, brightness_);
+    drawGraphic(kBootAnimation[frame % kBootFrameCount]);
 }
 
 void LedMatrix::showConnecting(uint32_t frame) {
-    setColor(0, 0, brightness_);
+    const uint8_t hue = static_cast<uint8_t>(frame * 9);
+    const RgbColor color = rainbowColor(brightness_, hue);
+
+    setColor(color.red, color.green, color.blue);
     drawGraphic(kWorkAnimation[frame % 4]);
 }
 
@@ -74,9 +113,22 @@ void LedMatrix::showConnected() {
     drawGraphic(kOk);
 }
 
-void LedMatrix::showSetup() {
-    setColor(0, brightness_, brightness_);
-    drawGraphic(kHeart);
+// void LedMatrix::showSetup() {
+//     setColor(0, brightness_, 0);
+//     drawGraphic(kHeart);
+// }
+
+void LedMatrix::showSetup(uint32_t frame) {
+    if (led_strip_ == nullptr) return;
+
+    const uint8_t phase = (frame / 1) % 7;
+
+    for (uint16_t i = 0; i < kLedCount_; i++) {
+        const uint8_t level = kSetupLevels[(kCenterRings[i] + phase) % 7];
+        setPixel(i, level, level, level);
+    }
+
+    refreshIfDirty();
 }
 
 void LedMatrix::showDepartureMinutes(uint8_t minutes, uint8_t r, uint8_t g, uint8_t b) {
