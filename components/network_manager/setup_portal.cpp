@@ -26,6 +26,7 @@ static constexpr size_t kMaxTransportValueLength = 15;
 static constexpr size_t kMaxDirectionValueLength = 3;
 static constexpr size_t kMaxWalkTimeValueLength = 3;
 static constexpr size_t kMaxBrightnessValueLength = 4;
+static constexpr size_t kMaxArrowDirectionValueLength = 7;
 
 static constexpr size_t kMaxSetupRequestLength =
     sizeof("ssid=") - 1 +
@@ -42,6 +43,8 @@ static constexpr size_t kMaxSetupRequestLength =
     kMaxWalkTimeValueLength +
     sizeof("&brightness=") - 1 +
     kMaxBrightnessValueLength +
+    sizeof("&arrow_direction=") - 1 +
+    kMaxArrowDirectionValueLength +
     1;
 
 static const char* kSharedStyle = R"css(
@@ -527,6 +530,8 @@ static esp_err_t sendSetupPage(httpd_req_t* req) {
         s_setup_settings.startup_direction == 2 ? 2 : 1;
     const char* transport_value = portalTransportValue(s_setup_settings.site.transport_filter);
     const char* brightness_value = portalBrightnessValue(s_setup_settings.brightness);
+    const char* arrow_direction_value =
+        s_setup_settings.flip_direction_arrows ? "flipped" : "normal";
     char walk_time_value[4] = {};
     snprintf(
         walk_time_value,
@@ -779,6 +784,41 @@ static esp_err_t sendSetupPage(httpd_req_t* req) {
             </select>
             <span class="hint">A short button press switches direction later.</span>
           </div>
+
+          <div class="field">
+            <label for="arrow_direction">Direction arrows</label>
+            <select id="arrow_direction" name="arrow_direction">
+              <option value="normal")html"
+    );
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = sendSelectedAttribute(req, strcmp(arrow_direction_value, "normal") == 0);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = httpd_resp_sendstr_chunk(
+        req,
+        R"html(>Normal</option>
+              <option value="flipped")html"
+    );
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = sendSelectedAttribute(req, strcmp(arrow_direction_value, "flipped") == 0);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = httpd_resp_sendstr_chunk(
+        req,
+        R"html(>Flipped</option>
+            </select>
+            <span class="hint">Flip left and right arrow feedback if the current mapping feels backwards.</span>
+          </div>
         </fieldset>
 
         <button class="primary" type="submit" id="save-button">Save and restart</button>
@@ -891,12 +931,19 @@ static esp_err_t handleSetupSaveRequest(httpd_req_t* req) {
     char transport_buffer[16] = {};
     char walk_time_buffer[4] = {};
     char brightness_buffer[8] = {};
+    char arrow_direction_buffer[8] = {};
 
     if (httpd_query_key_value(body, "ssid", encoded_ssid, sizeof(encoded_ssid)) != ESP_OK ||
         httpd_query_key_value(body, "site_id", site_id_buffer, sizeof(site_id_buffer)) != ESP_OK ||
         httpd_query_key_value(body, "direction", direction_buffer, sizeof(direction_buffer)) != ESP_OK ||
         httpd_query_key_value(body, "walk_time", walk_time_buffer, sizeof(walk_time_buffer)) != ESP_OK ||
-        httpd_query_key_value(body, "brightness", brightness_buffer, sizeof(brightness_buffer)) != ESP_OK) {
+        httpd_query_key_value(body, "brightness", brightness_buffer, sizeof(brightness_buffer)) != ESP_OK ||
+        httpd_query_key_value(
+            body,
+            "arrow_direction",
+            arrow_direction_buffer,
+            sizeof(arrow_direction_buffer)
+        ) != ESP_OK) {
         return sendSetupErrorResponse(req);
     }
 
@@ -934,6 +981,14 @@ static esp_err_t handleSetupSaveRequest(httpd_req_t* req) {
         config.brightness = DisplayBrightness::LOW;
     } else if (strcmp(brightness_buffer, "high") == 0) {
         config.brightness = DisplayBrightness::HIGH;
+    } else {
+        return sendSetupErrorResponse(req);
+    }
+
+    if (strcmp(arrow_direction_buffer, "normal") == 0) {
+        config.flip_direction_arrows = false;
+    } else if (strcmp(arrow_direction_buffer, "flipped") == 0) {
+        config.flip_direction_arrows = true;
     } else {
         return sendSetupErrorResponse(req);
     }

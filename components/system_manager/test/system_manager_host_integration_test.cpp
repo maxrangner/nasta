@@ -46,6 +46,7 @@ static DeviceSettings makeValidSettings() {
     settings.startup_direction = 1;
     settings.walk_time_minutes = 4;
     settings.brightness = DisplayBrightness::HIGH;
+    settings.flip_direction_arrows = false;
     return settings;
 }
 
@@ -58,6 +59,7 @@ static DeviceSettings makeSetupModeSettings() {
     settings.startup_direction = 2;
     settings.walk_time_minutes = 6;
     settings.brightness = DisplayBrightness::LOW;
+    settings.flip_direction_arrows = true;
     settings.setup.needs_setup = true;
     return settings;
 }
@@ -257,6 +259,7 @@ void test_system_manager_start_runtime_queues_start_normal_mode_when_loaded_sett
         static_cast<int>(loaded_settings_stub.brightness),
         static_cast<int>(command.settings.brightness)
     );
+    TEST_ASSERT_EQUAL(loaded_settings_stub.flip_direction_arrows, command.settings.flip_direction_arrows);
     TEST_ASSERT_EQUAL_CHAR(loaded_settings_stub.wifi.ssid[0], command.settings.wifi.ssid[0]);
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(DisplayAnimation::BOOT),
@@ -290,6 +293,7 @@ void test_system_manager_start_runtime_queues_start_setup_mode_with_loaded_setti
         static_cast<int>(loaded_settings_stub.brightness),
         static_cast<int>(command.settings.brightness)
     );
+    TEST_ASSERT_EQUAL(loaded_settings_stub.flip_direction_arrows, command.settings.flip_direction_arrows);
     TEST_ASSERT_EQUAL_STRING(loaded_settings_stub.wifi.ssid, command.settings.wifi.ssid);
     TEST_ASSERT_EQUAL_STRING(loaded_settings_stub.wifi.password, command.settings.wifi.password);
 }
@@ -373,5 +377,37 @@ void test_system_manager_enters_departures_state_when_network_has_departures(voi
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(loaded_settings_stub.brightness),
         static_cast<int>(display_state.brightness)
+    );
+}
+
+void test_system_manager_uses_default_arrow_mapping_when_flip_setting_is_off(void)
+{
+    SystemEvent system_event {};
+    system_event.type = SystemEventType::TOGGLE_DIRECTION;
+
+    SystemManagerHostTestAccess::handleEvent(*system_manager, system_event);
+
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(DisplayAnimation::DIRECTION_RIGHT),
+        static_cast<int>(last_animation)
+    );
+}
+
+void test_system_manager_flips_arrow_mapping_when_setting_is_on(void)
+{
+    loaded_settings_stub = makeValidSettings();
+    loaded_settings_stub.flip_direction_arrows = true;
+    delete system_manager;
+    system_manager = new SystemManager(&test_queues);
+    system_manager->init();
+
+    SystemEvent system_event {};
+    system_event.type = SystemEventType::TOGGLE_DIRECTION;
+
+    SystemManagerHostTestAccess::handleEvent(*system_manager, system_event);
+
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(DisplayAnimation::DIRECTION_LEFT),
+        static_cast<int>(last_animation)
     );
 }

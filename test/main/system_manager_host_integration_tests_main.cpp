@@ -7,6 +7,8 @@ void test_system_manager_enters_connected_state_when_network_is_ready_with_no_de
 void test_system_manager_enters_api_error_state_when_network_reports_api_error(void);
 void test_system_manager_enters_no_departures_state_when_network_is_ready_with_empty_departures(void);
 void test_system_manager_enters_departures_state_when_network_has_departures(void);
+void test_system_manager_uses_default_arrow_mapping_when_flip_setting_is_off(void);
+void test_system_manager_flips_arrow_mapping_when_setting_is_on(void);
 
 int main(void)
 {
@@ -19,6 +21,8 @@ int main(void)
     RUN_TEST(test_system_manager_enters_api_error_state_when_network_reports_api_error);
     RUN_TEST(test_system_manager_enters_no_departures_state_when_network_is_ready_with_empty_departures);
     RUN_TEST(test_system_manager_enters_departures_state_when_network_has_departures);
+    RUN_TEST(test_system_manager_uses_default_arrow_mapping_when_flip_setting_is_off);
+    RUN_TEST(test_system_manager_flips_arrow_mapping_when_setting_is_on);
 
     return UNITY_END();
 }

@@ -109,8 +109,13 @@ void SystemManager::handleToggleDirection() {
     selected_direction_ = selected_direction_ == 1 ? 2 : 1;
     ESP_LOGI(TAG, "Direction -> %u", static_cast<unsigned>(selected_direction_));
 
+    bool show_left_arrow = selected_direction_ == 1;
+    if (settings_.flip_direction_arrows) {
+        show_left_arrow = !show_left_arrow;
+    }
+
     displayPlayAnimation(
-        selected_direction_ == 1
+        show_left_arrow
             ? DisplayAnimation::DIRECTION_LEFT
             : DisplayAnimation::DIRECTION_RIGHT
     );

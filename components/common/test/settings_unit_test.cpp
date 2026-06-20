@@ -78,3 +78,16 @@ void test_applySetupConfig_copies_walk_time_minutes(void)
     );
     TEST_ASSERT_FALSE(settings.setup.needs_setup);
 }
+
+void test_applySetupConfig_copies_arrow_flip_setting(void)
+{
+    DeviceSettings settings {};
+    SetupConfig config {};
+    config.wifi.ssid[0] = 'A';
+    config.site.site_id = 1;
+    config.flip_direction_arrows = true;
+
+    applySetupConfig(settings, config);
+
+    TEST_ASSERT_TRUE(settings.flip_direction_arrows);
+}

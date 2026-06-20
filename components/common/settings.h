@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include "types.h"
 
-static constexpr uint8_t kDeviceSettingsVersion = 5;
+static constexpr uint8_t kDeviceSettingsVersion = 6;
 static constexpr uint8_t kMaxWifiSsidLength = 32;
 static constexpr uint8_t kMaxWifiPasswordLength = 64;
 
@@ -38,6 +38,7 @@ struct DeviceSettings {
     SetupSettings setup {};
     uint8_t walk_time_minutes = 0;
     DisplayBrightness brightness = kDefaultDisplayBrightness;
+    bool flip_direction_arrows = false;
 };
 
 struct SetupConfig {
@@ -46,6 +47,7 @@ struct SetupConfig {
     uint8_t startup_direction = 1;
     uint8_t walk_time_minutes = 0;
     DisplayBrightness brightness = kDefaultDisplayBrightness;
+    bool flip_direction_arrows = false;
 };
 
 inline bool isValidDisplayBrightness(DisplayBrightness brightness) {
@@ -87,6 +89,7 @@ inline void applySetupConfig(DeviceSettings& settings, const SetupConfig& config
     settings.setup.needs_setup = false;
     settings.walk_time_minutes = config.walk_time_minutes;
     settings.brightness = config.brightness;
+    settings.flip_direction_arrows = config.flip_direction_arrows;
 }
 
 enum class BootMode : uint8_t {
