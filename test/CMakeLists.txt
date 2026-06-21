@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(sl_go_mini_tests LANGUAGES C CXX)
+project(nasta_mini_tests LANGUAGES C CXX)
 
 enable_testing()
 
@@ -40,7 +40,7 @@ function(add_host_test target_name)
     add_test(NAME ${target_name} COMMAND ${target_name})
 endfunction()
 
-add_host_test(sl_go_mini_common_unit_tests
+add_host_test(nasta_mini_common_unit_tests
     SOURCES
         main/common_unit_tests_main.cpp
         ../components/common/test/settings_unit_test.cpp
@@ -50,7 +50,7 @@ add_host_test(sl_go_mini_common_unit_tests
         ../components/common
 )
 
-add_host_test(sl_go_mini_system_manager_host_integration_tests
+add_host_test(nasta_mini_system_manager_host_integration_tests
     SOURCES
         main/system_manager_host_integration_tests_main.cpp
         ../components/system_manager/system_manager.cpp
@@ -63,7 +63,7 @@ add_host_test(sl_go_mini_system_manager_host_integration_tests
         ../components/button_driver
 )
 
-add_host_test(sl_go_mini_display_unit_tests
+add_host_test(nasta_mini_display_unit_tests
     SOURCES
         main/display_unit_tests_main.cpp
         ../components/display/display.cpp

@@ -105,7 +105,7 @@ void Display::showDeparture() {
     }
 
     if (looksLikeClockTime(text)) {
-        matrix_->showDepartureClock(text, frame_, 0, brightness, 0);
+        matrix_->showDepartureClock(text, frame_, brightness, brightness, brightness);
         return;
     }
 

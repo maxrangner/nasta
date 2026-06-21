@@ -4,7 +4,7 @@
 #include <string.h>
 
 static const char *TAG = "wifi interface";
-static constexpr const char* kSetupApSsid = "sl-go-mini-setup";
+static constexpr const char* kSetupApSsid = "nasta-mini-setup";
 static constexpr uint32_t kLinkEventSendTimeoutMs = 10;
 
 WifiInterface::WifiInterface(QueueHandle_t queue) 

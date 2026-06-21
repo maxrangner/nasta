@@ -77,12 +77,16 @@ Desktop.ini
 *.workspace # General workspace files, can be from various tools
 *.suo       # Visual Studio Solution User Options
 *.sln.docstates # Visual Studio
+.vscode/
+.devcontainer/
+Testing/Temporary/
 credentials.*
 AGENTS.md
 LLM_REDESIGN_FLOW.md
+DESIGN.md
 internal-readme.md
 PROJECT_STATUS.md
 TESTING.md
-FEEDACK.md
+FEEDBACK.md
 SYSTEM_DESIGN_FEEDBACK.md
 CODEX_FEEDBACK.md

@@ -15,7 +15,7 @@
 #include <unistd.h>
 
 static const char* TAG = "setup portal";
-static constexpr const char* kSetupPortalUrl = "http://setup.sl-go-mini/";
+static constexpr const char* kSetupPortalUrl = "http://setup.nasta-mini/";
 static constexpr const char* kApNetifKey = "WIFI_AP_DEF";
 static constexpr uint16_t kDnsPort = 53;
 static constexpr size_t kMaxDnsPacketSize = 512;
@@ -514,7 +514,7 @@ static esp_err_t sendSelectedAttribute(httpd_req_t* req, bool selected) {
 }
 
 static esp_err_t sendSetupPage(httpd_req_t* req) {
-    esp_err_t err = sendHtmlDocumentStart(req, "sl-go-mini setup");
+    esp_err_t err = sendHtmlDocumentStart(req, "Nästa Mini setup");
     if (err != ESP_OK) {
         return err;
     }
@@ -551,8 +551,8 @@ static esp_err_t sendSetupPage(httpd_req_t* req) {
   <div class="card">
     <div class="hero">
       <span class="badge">Setup mode</span>
-      <h1>sl-go-mini</h1>
-      <p>Connect Wi-Fi and choose a stop for live departures. If this page does not open automatically, visit <strong>http://setup.sl-go-mini/</strong>.</p>
+      <h1>Nästa Mini</h1>
+      <p>Connect Wi-Fi and choose a stop for live departures. If this page does not open automatically, visit <strong>http://setup.nasta-mini/</strong>.</p>
     </div>
     <div class="content">
       <form method="post" action="/save" id="setup-form">

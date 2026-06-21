@@ -11,20 +11,16 @@ extern "C" void app_main(void)
 {
     systemInit();
 
-    Queues queues = {
+    static Queues queues = {
         .system_in_queue = xQueueCreate(kSystemQueueLength, sizeof(SystemEvent)),
         .network_in_queue = xQueueCreate(kNetworkQueueLength, sizeof(NetworkCommand)),
     };
 
-    Display display;
+    static Display display;
+    static SystemManager system_manager(&queues, &display);
+    static NetworkManager network_manager(&queues);
+    
     display.init();
-
-    SystemManager system_manager(&queues, &display);
-    NetworkManager network_manager(&queues);
     network_manager.init();
     system_manager.init();
-
-    while(1) {
-        vTaskDelay(portMAX_DELAY);
-    }
 }
